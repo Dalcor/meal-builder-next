@@ -210,10 +210,13 @@ export default function StatsPanel({ weightLog, dailyMeals, mealsDone, products,
     if (calCanvasRef.current) drawChart(calCanvasRef.current, days, calData, '#f59e0b', 'ккал', undefined, 500);
   }, [days, calData]);
 
-  // Sync weight input when date changes
-  useEffect(() => {
+  // Reset weight input when the selected date changes (React-recommended
+  // "adjusting state on prop change" pattern: store previous value as state).
+  const [prevDate, setPrevDate] = useState(selectedDate);
+  if (prevDate !== selectedDate) {
+    setPrevDate(selectedDate);
     setWeightInput(weightLog[selectedDate]?.toString() ?? '');
-  }, [selectedDate, weightLog]);
+  }
 
   const saveWeight = () => {
     const val = parseFloat(weightInput);

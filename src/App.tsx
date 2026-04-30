@@ -17,6 +17,7 @@ import { exportDayToPdf } from '@/utils/exportPdf';
 import PromptModal from '@/components/PromptModal';
 import ReplaceItemModal from '@/components/ReplaceItemModal';
 import StatsPanel from '@/components/StatsPanel';
+import AddItemModal from '@/components/AddItemModal';
 
 const MEAL_TYPES: { type: MealType; label: string }[] = [
   { type: 'breakfast', label: 'Сніданок' },
@@ -98,6 +99,8 @@ export default function App() {
   const [savePresetModal, setSavePresetModal] = useState<{ type: MealType; defaultName: string } | null>(null);
   const [replaceModal, setReplaceModal] = useState<{ mealType: MealType; item: MealItem; nutrients: FoodNutrients } | null>(null);
   const [showStats, setShowStats] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
+  const [addItemFor, setAddItemFor] = useState<{ mealType: MealType; mealLabel: string } | null>(null);
 
   const [portionModal, setPortionModal] = useState<{
     nutrients: FoodNutrients;
@@ -109,7 +112,9 @@ export default function App() {
   } | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, {
+      activationConstraint: { delay: 150, tolerance: 6 },
+    })
   );
 
   // --- Products ---
@@ -184,6 +189,27 @@ export default function App() {
     setActiveSourceType(event.active.data.current?.sourceType ?? 'product');
   };
 
+  const startAddingToMeal = (
+    sourceType: 'product' | 'dish',
+    sourceId: string,
+    mealType: MealType,
+  ) => {
+    const nutrients = getSourceNutrients(sourceType, sourceId, products, dishes);
+    if (!nutrients) return;
+
+    if (sourceType === 'dish') {
+      const dish = dishes.find(d => d.id === sourceId);
+      if (dish?.fixedPortion) {
+        const totalWeight = getDishTotalWeight(dish);
+        const newItem: MealItem = { id: generateId(), sourceType, sourceId, grams: totalWeight };
+        setMeals(prev => ({ ...prev, [mealType]: [...prev[mealType], newItem] }));
+        return;
+      }
+    }
+
+    setPortionModal({ nutrients, sourceType, sourceId, mealType });
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveId(null);
     setActiveSourceType(null);
@@ -196,21 +222,14 @@ export default function App() {
     const sourceType = active.data.current?.sourceType as 'product' | 'dish';
     const sourceId = active.id as string;
 
-    const nutrients = getSourceNutrients(sourceType, sourceId, products, dishes);
-    if (!nutrients) return;
+    startAddingToMeal(sourceType, sourceId, mealType);
+  };
 
-    // Fixed portion dishes skip the modal
-    if (sourceType === 'dish') {
-      const dish = dishes.find(d => d.id === sourceId);
-      if (dish?.fixedPortion) {
-        const totalWeight = getDishTotalWeight(dish);
-        const newItem: MealItem = { id: generateId(), sourceType, sourceId, grams: totalWeight };
-        setMeals(prev => ({ ...prev, [mealType]: [...prev[mealType], newItem] }));
-        return;
-      }
-    }
-
-    setPortionModal({ nutrients, sourceType, sourceId, mealType });
+  const handlePickerSelect = (sourceType: 'product' | 'dish', sourceId: string) => {
+    if (!addItemFor) return;
+    const mealType = addItemFor.mealType;
+    setAddItemFor(null);
+    startAddingToMeal(sourceType, sourceId, mealType);
   };
 
   // --- Meal items ---
@@ -415,11 +434,11 @@ export default function App() {
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="h-screen flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="bg-white shadow-sm border-b px-6 py-3">
+        <header className="bg-white shadow-sm border-b px-3 sm:px-6 py-2 sm:py-3">
           <div className="max-w-7xl mx-auto">
-            <div className="flex items-center justify-between">
-              <h1 className="text-xl font-bold text-gray-800">Meal Builder</h1>
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <h1 className="text-base sm:text-xl font-bold text-gray-800">Meal Builder</h1>
+              <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                 <button
                   onClick={handleImport}
                   className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
@@ -448,8 +467,7 @@ export default function App() {
             </div>
 
             {/* Macro summary bar */}
-            <div className="flex items-center gap-6 mt-2 text-sm">
-              {/* Calories */}
+            <div className="flex items-center gap-3 sm:gap-6 mt-2 text-xs sm:text-sm flex-wrap">
               <div className="flex items-center gap-1.5">
                 <span className="text-gray-500">Ккал:</span>
                 <span className="font-semibold">{dayTotals.calories.toFixed(0)}</span>
@@ -458,7 +476,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Protein */}
               <div className="flex items-center gap-1.5">
                 <span className="text-gray-500">Білки:</span>
                 <span className={`font-semibold ${
@@ -472,7 +489,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Fat % */}
               <div className="flex items-center gap-1.5">
                 <span className="text-gray-500">Жири:</span>
                 <span className={`font-semibold ${
@@ -482,12 +498,11 @@ export default function App() {
                   {fatPercent.toFixed(1)}%
                 </span>
                 {macroTargets.fatPercent > 0 && (
-                  <span className="text-gray-400">/ max {macroTargets.fatPercent}%</span>
+                  <span className="text-gray-400 hidden sm:inline">/ max {macroTargets.fatPercent}%</span>
                 )}
-                <span className="text-gray-400 text-xs">({dayTotals.fat.toFixed(1)}г)</span>
+                <span className="text-gray-400 text-xs hidden sm:inline">({dayTotals.fat.toFixed(1)}г)</span>
               </div>
 
-              {/* Carbs */}
               <div className="flex items-center gap-1.5">
                 <span className="text-gray-500">Вуглеводи:</span>
                 <span className="font-semibold">{dayTotals.carbs.toFixed(1)}г</span>
@@ -495,7 +510,7 @@ export default function App() {
             </div>
 
             {/* Progress bars */}
-            <div className="flex gap-4 mt-2">
+            <div className="hidden sm:flex gap-4 mt-2">
               {totalTarget > 0 && (
                 <div className="flex-1">
                   <div className="w-full bg-gray-100 rounded-full h-1.5">
@@ -522,7 +537,7 @@ export default function App() {
 
             {/* Macro settings */}
             {showMacroSettings && (
-              <div className="mt-3 pt-3 border-t flex items-center gap-4 text-sm">
+              <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-3 sm:gap-4 text-xs sm:text-sm">
                 <label className="flex items-center gap-1.5">
                   <span className="text-gray-500">Білки (ціль):</span>
                   <input
@@ -554,9 +569,33 @@ export default function App() {
         </header>
 
         {/* Main content */}
-        <div className="flex-1 flex max-w-7xl mx-auto w-full gap-4 p-4 min-h-0">
-          {/* Left panel */}
-          <aside className="w-72 flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
+        <div className="flex-1 flex flex-col md:flex-row max-w-7xl mx-auto w-full gap-2 md:gap-4 p-2 md:p-4 min-h-0">
+          {/* Left panel: sidebar (desktop) / slide-over (mobile) */}
+          {showSidebar && (
+            <div
+              className="md:hidden fixed inset-0 bg-black/40 z-40"
+              onClick={() => setShowSidebar(false)}
+            />
+          )}
+          <aside
+            className={`${
+              showSidebar
+                ? 'fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm bg-white shadow-2xl p-3 overflow-y-auto'
+                : 'hidden'
+            } md:static md:flex md:z-auto md:w-72 md:max-w-none md:p-0 md:bg-transparent md:shadow-none md:flex-shrink-0 md:flex-col md:gap-2 md:overflow-y-auto flex flex-col gap-2`}
+          >
+            <div className="flex md:hidden items-center justify-between mb-1">
+              <h2 className="font-semibold text-gray-700">Каталог</h2>
+              <button
+                onClick={() => setShowSidebar(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+                aria-label="Закрити"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
             {/* Tabs */}
             <div className="flex border rounded-lg overflow-hidden">
               <button
@@ -586,6 +625,7 @@ export default function App() {
                 <ProductCatalog
                   onAdd={data => {
                     setProducts(prev => [...prev, { ...data, id: generateId() }]);
+                    setShowSidebar(false);
                   }}
                 />
 
@@ -700,9 +740,20 @@ export default function App() {
           </aside>
 
           {/* Right: Meals */}
-          <main className="flex-1 overflow-y-auto space-y-3">
+          <main className="flex-1 overflow-y-auto space-y-3 min-w-0">
+            {/* Mobile-only sidebar opener */}
+            <button
+              onClick={() => setShowSidebar(true)}
+              className="md:hidden w-full py-2 px-3 bg-white border rounded-lg text-sm font-medium text-gray-700 shadow-sm flex items-center justify-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 6a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm1 5a1 1 0 100 2h12a1 1 0 100-2H4z" />
+              </svg>
+              Каталог: продукти ({products.length}) / страви ({dishes.length})
+            </button>
+
             {/* Date picker */}
-            <div className="flex items-center justify-center gap-2 bg-white rounded-lg border px-3 py-1.5 shadow-sm sticky top-0 z-10">
+            <div className="flex items-center justify-center gap-1 sm:gap-2 bg-white rounded-lg border px-2 sm:px-3 py-1.5 shadow-sm sticky top-0 z-10">
               <button
                 onClick={() => setSelectedDate(prev => shiftDate(prev, -1))}
                 className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-500"
@@ -765,6 +816,7 @@ export default function App() {
                 onTargetChange={value =>
                   setTargets(prev => ({ ...prev, [type]: value }))
                 }
+                onAddItem={() => setAddItemFor({ mealType: type, mealLabel: label })}
                 onEditItem={itemId => handleEditMealItem(type, itemId)}
                 onReplaceItem={itemId => handleReplaceMealItem(type, itemId)}
                 onDeleteItem={itemId => handleDeleteMealItem(type, itemId)}
@@ -796,6 +848,19 @@ export default function App() {
           </div>
         )}
       </DragOverlay>
+
+      {/* Add item picker (mobile primary, also available on desktop) */}
+      {addItemFor && (
+        <AddItemModal
+          mealType={addItemFor.mealType}
+          mealLabel={addItemFor.mealLabel}
+          products={products}
+          dishes={dishes}
+          pinnedIds={pinnedIds}
+          onPick={handlePickerSelect}
+          onCancel={() => setAddItemFor(null)}
+        />
+      )}
 
       {/* Portion modal */}
       {portionModal && (

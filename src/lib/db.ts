@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import bcrypt from 'bcryptjs';
+import type { UserData, UserSliceKey } from '@/types';
 
 const DB_DIR = path.join(process.cwd(), 'db');
 const USERS_FILE = path.join(DB_DIR, 'users.json');
@@ -13,19 +14,19 @@ export interface DbUser {
   passwordHash: string;
 }
 
-export interface UserData {
-  products: unknown[];
-  dishes: unknown[];
-  dailyMeals: Record<string, unknown>;
-  targets: Record<string, number>;
-  macroTargets: Record<string, number>;
-  pinnedIds: string[];
-  mealsDone: Record<string, unknown>;
-  mealPresets: unknown[];
-  weightLog: Record<string, number>;
-}
+const SLICE_FILES: Record<UserSliceKey, string> = {
+  products: 'products.json',
+  dishes: 'dishes.json',
+  dailyMeals: 'daily-meals.json',
+  targets: 'targets.json',
+  macroTargets: 'macro-targets.json',
+  pinnedIds: 'pinned.json',
+  mealsDone: 'meals-done.json',
+  mealPresets: 'meal-presets.json',
+  weightLog: 'weight-log.json',
+};
 
-const DEFAULT_USER_DATA: UserData = {
+const SLICE_DEFAULTS: { [K in UserSliceKey]: UserData[K] } = {
   products: [],
   dishes: [],
   dailyMeals: {},
@@ -37,7 +38,7 @@ const DEFAULT_USER_DATA: UserData = {
   weightLog: {},
 };
 
-function ensureDbExists() {
+function ensureDbDirs(): void {
   if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
   if (!fs.existsSync(USERDATA_DIR)) fs.mkdirSync(USERDATA_DIR, { recursive: true });
   if (!fs.existsSync(USERS_FILE)) {
@@ -53,8 +54,66 @@ function ensureDbExists() {
   }
 }
 
+function getUserDir(userId: string): string {
+  return path.join(USERDATA_DIR, userId);
+}
+
+// Migrate the legacy single-file layout (`db/userdata/{userId}.json`) into
+// the per-slice directory layout. Idempotent and non-destructive: only fills
+// in slices that don't already exist on disk, then removes the legacy file.
+function migrateLegacyUserFile(userId: string): void {
+  const legacy = path.join(USERDATA_DIR, `${userId}.json`);
+  if (!fs.existsSync(legacy)) return;
+  const dir = getUserDir(userId);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  let old: Record<string, unknown>;
+  try {
+    old = JSON.parse(fs.readFileSync(legacy, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    return;
+  }
+
+  for (const key of Object.keys(SLICE_FILES) as UserSliceKey[]) {
+    const target = path.join(dir, SLICE_FILES[key]);
+    if (fs.existsSync(target)) continue;
+    const value = old[key] ?? SLICE_DEFAULTS[key];
+    fs.writeFileSync(target, JSON.stringify(value, null, 2));
+  }
+  fs.unlinkSync(legacy);
+}
+
+function ensureUserDir(userId: string): string {
+  ensureDbDirs();
+  const dir = getUserDir(userId);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  migrateLegacyUserFile(userId);
+  return dir;
+}
+
+export function readSlice<K extends UserSliceKey>(userId: string, key: K): UserData[K] {
+  const dir = ensureUserDir(userId);
+  const file = path.join(dir, SLICE_FILES[key]);
+  if (!fs.existsSync(file)) return SLICE_DEFAULTS[key];
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf-8')) as UserData[K];
+  } catch {
+    return SLICE_DEFAULTS[key];
+  }
+}
+
+export function writeSlice<K extends UserSliceKey>(
+  userId: string,
+  key: K,
+  value: UserData[K],
+): void {
+  const dir = ensureUserDir(userId);
+  const file = path.join(dir, SLICE_FILES[key]);
+  fs.writeFileSync(file, JSON.stringify(value, null, 2));
+}
+
 export function getUsers(): DbUser[] {
-  ensureDbExists();
+  ensureDbDirs();
   return JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
 }
 
@@ -67,7 +126,7 @@ export function getUserById(id: string): DbUser | undefined {
 }
 
 export function createUser(email: string, name: string, password: string): DbUser {
-  ensureDbExists();
+  ensureDbDirs();
   const users = getUsers();
   if (users.find(u => u.email === email)) {
     throw new Error('User already exists');
@@ -85,20 +144,4 @@ export function createUser(email: string, name: string, password: string): DbUse
 
 export function verifyPassword(user: DbUser, password: string): boolean {
   return bcrypt.compareSync(password, user.passwordHash);
-}
-
-export function getUserData(userId: string): UserData {
-  ensureDbExists();
-  const filePath = path.join(USERDATA_DIR, `${userId}.json`);
-  if (!fs.existsSync(filePath)) {
-    return { ...DEFAULT_USER_DATA };
-  }
-  const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  return { ...DEFAULT_USER_DATA, ...raw };
-}
-
-export function saveUserData(userId: string, data: UserData): void {
-  ensureDbExists();
-  const filePath = path.join(USERDATA_DIR, `${userId}.json`);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }

@@ -1,19 +1,16 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import type { Product, Dish, Meals, MealTargets, MacroTargets, MealType, MealPreset } from '@/types';
-
-interface UserData {
-  products: Product[];
-  dishes: Dish[];
-  dailyMeals: Record<string, Meals>;
-  targets: MealTargets;
-  macroTargets: MacroTargets;
-  pinnedIds: string[];
-  mealsDone: Record<string, Partial<Record<MealType, boolean>>>;
-  mealPresets: MealPreset[];
-  weightLog: Record<string, number>;
-}
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import type {
+  Product,
+  Dish,
+  Meals,
+  MealTargets,
+  MacroTargets,
+  MealType,
+  MealPreset,
+  UserData,
+} from '@/types';
 
 interface DataContextValue extends UserData {
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
@@ -41,7 +38,38 @@ const DEFAULTS: UserData = {
   weightLog: {},
 };
 
+const ENDPOINTS: Record<keyof UserData, string> = {
+  products: '/api/products',
+  dishes: '/api/dishes',
+  dailyMeals: '/api/meals',
+  targets: '/api/targets',
+  macroTargets: '/api/macro-targets',
+  pinnedIds: '/api/pinned',
+  mealsDone: '/api/meals-done',
+  mealPresets: '/api/meal-presets',
+  weightLog: '/api/weight-log',
+};
+
 const DataContext = createContext<DataContextValue | null>(null);
+
+function useDebouncedSave<T>(
+  endpoint: string,
+  value: T,
+  enabled: React.RefObject<boolean>,
+  delayMs = 500,
+) {
+  useEffect(() => {
+    if (!enabled.current) return;
+    const timer = setTimeout(() => {
+      fetch(endpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(value),
+      }).catch(() => {});
+    }, delayMs);
+    return () => clearTimeout(timer);
+  }, [endpoint, value, enabled, delayMs]);
+}
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
@@ -54,52 +82,71 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [mealsDone, setMealsDone] = useState<Record<string, Partial<Record<MealType, boolean>>>>(DEFAULTS.mealsDone);
   const [mealPresets, setMealPresets] = useState<MealPreset[]>(DEFAULTS.mealPresets);
   const [weightLog, setWeightLog] = useState<Record<string, number>>(DEFAULTS.weightLog);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialized = useRef(false);
 
-  // Load data from server
+  // Load all slices in parallel on mount.
   useEffect(() => {
-    fetch('/api/data')
-      .then(r => r.json())
-      .then((data: UserData) => {
-        if (data) {
-          setProducts(data.products ?? []);
-          setDishes(data.dishes ?? []);
-          setDailyMeals(data.dailyMeals ?? {});
-          setTargets(data.targets ?? DEFAULTS.targets);
-          setMacroTargets(data.macroTargets ?? DEFAULTS.macroTargets);
-          setPinnedIds(data.pinnedIds ?? []);
-          setMealsDone(data.mealsDone ?? {});
-          setMealPresets(data.mealPresets ?? []);
-          setWeightLog(data.weightLog ?? {});
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        setLoading(false);
-        // Small delay to prevent initial load from triggering save
-        setTimeout(() => { initialized.current = true; }, 100);
-      });
+    let cancelled = false;
+    const fetchSlice = <K extends keyof UserData>(key: K): Promise<UserData[K]> =>
+      fetch(ENDPOINTS[key])
+        .then(r => (r.ok ? (r.json() as Promise<UserData[K]>) : DEFAULTS[key]))
+        .catch(() => DEFAULTS[key]);
+
+    Promise.all([
+      fetchSlice('products'),
+      fetchSlice('dishes'),
+      fetchSlice('dailyMeals'),
+      fetchSlice('targets'),
+      fetchSlice('macroTargets'),
+      fetchSlice('pinnedIds'),
+      fetchSlice('mealsDone'),
+      fetchSlice('mealPresets'),
+      fetchSlice('weightLog'),
+    ]).then(([
+      products,
+      dishes,
+      dailyMeals,
+      targets,
+      macroTargets,
+      pinnedIds,
+      mealsDone,
+      mealPresets,
+      weightLog,
+    ]) => {
+      if (cancelled) return;
+      setProducts(products ?? DEFAULTS.products);
+      setDishes(dishes ?? DEFAULTS.dishes);
+      setDailyMeals(dailyMeals ?? DEFAULTS.dailyMeals);
+      setTargets(targets ?? DEFAULTS.targets);
+      setMacroTargets(macroTargets ?? DEFAULTS.macroTargets);
+      setPinnedIds(pinnedIds ?? DEFAULTS.pinnedIds);
+      setMealsDone(mealsDone ?? DEFAULTS.mealsDone);
+      setMealPresets(mealPresets ?? DEFAULTS.mealPresets);
+      setWeightLog(weightLog ?? DEFAULTS.weightLog);
+      setLoading(false);
+      // Allow initial render to settle before enabling auto-save.
+      setTimeout(() => {
+        initialized.current = true;
+      }, 100);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Auto-save to server on changes (debounced)
-  const save = useCallback(() => {
-    if (!initialized.current) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      const data: UserData = {
-        products, dishes, dailyMeals, targets, macroTargets,
-        pinnedIds, mealsDone, mealPresets, weightLog,
-      };
-      fetch('/api/data', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }).catch(() => {});
-    }, 500);
-  }, [products, dishes, dailyMeals, targets, macroTargets, pinnedIds, mealsDone, mealPresets, weightLog]);
-
-  useEffect(() => { save(); }, [save]);
+  // Per-slice debounced auto-save. Each slice is sent only when its own
+  // value reference changes, so a change to e.g. `weightLog` does not
+  // re-PUT the entire user data blob.
+  useDebouncedSave(ENDPOINTS.products, products, initialized);
+  useDebouncedSave(ENDPOINTS.dishes, dishes, initialized);
+  useDebouncedSave(ENDPOINTS.dailyMeals, dailyMeals, initialized);
+  useDebouncedSave(ENDPOINTS.targets, targets, initialized);
+  useDebouncedSave(ENDPOINTS.macroTargets, macroTargets, initialized);
+  useDebouncedSave(ENDPOINTS.pinnedIds, pinnedIds, initialized);
+  useDebouncedSave(ENDPOINTS.mealsDone, mealsDone, initialized);
+  useDebouncedSave(ENDPOINTS.mealPresets, mealPresets, initialized);
+  useDebouncedSave(ENDPOINTS.weightLog, weightLog, initialized);
 
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -109,10 +156,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   return (
     <DataContext.Provider
       value={{
-        products, setProducts, dishes, setDishes, dailyMeals, setDailyMeals,
-        targets, setTargets, macroTargets, setMacroTargets, pinnedIds, setPinnedIds,
-        mealsDone, setMealsDone, mealPresets, setMealPresets, weightLog, setWeightLog,
-        loading, logout,
+        products,
+        setProducts,
+        dishes,
+        setDishes,
+        dailyMeals,
+        setDailyMeals,
+        targets,
+        setTargets,
+        macroTargets,
+        setMacroTargets,
+        pinnedIds,
+        setPinnedIds,
+        mealsDone,
+        setMealsDone,
+        mealPresets,
+        setMealPresets,
+        weightLog,
+        setWeightLog,
+        loading,
+        logout,
       }}
     >
       {children}

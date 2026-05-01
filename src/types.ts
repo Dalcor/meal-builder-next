@@ -60,3 +60,17 @@ export interface MealPreset {
   name: string;
   items: MealItem[];
 }
+
+export interface UserData {
+  products: Product[];
+  dishes: Dish[];
+  dailyMeals: Record<string, Meals>;
+  targets: MealTargets;
+  macroTargets: MacroTargets;
+  pinnedIds: string[];
+  mealsDone: Record<string, Partial<Record<MealType, boolean>>>;
+  mealPresets: MealPreset[];
+  weightLog: Record<string, number>;
+}
+
+export type UserSliceKey = keyof UserData;

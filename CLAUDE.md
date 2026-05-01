@@ -47,7 +47,16 @@ meal-builder-next/
 ├── db/                        # NOTE: persist; gitignore не покриває
 │   ├── users.json             # масив користувачів з bcrypt-хешами
 │   └── userdata/
-│       └── user_<id>.json     # один файл = усі дані одного користувача
+│       └── user_<id>/         # одна директорія на користувача
+│           ├── products.json
+│           ├── dishes.json
+│           ├── daily-meals.json
+│           ├── meal-presets.json
+│           ├── targets.json
+│           ├── macro-targets.json
+│           ├── pinned.json
+│           ├── meals-done.json
+│           └── weight-log.json
 ├── public/                    # SVG іконки створені CRA-стартером
 ├── src/
 │   ├── app/                   # App Router
@@ -61,7 +70,15 @@ meal-builder-next/
 │   │       │   ├── logout/route.ts     # POST → clear cookie
 │   │       │   ├── me/route.ts         # GET → перевірка токена
 │   │       │   └── register/route.ts   # POST → create user
-│   │       └── data/route.ts           # GET/PUT усіх даних користувача
+│   │       ├── products/route.ts       # GET, PUT
+│   │       ├── dishes/route.ts         # GET, PUT
+│   │       ├── meals/route.ts          # GET, PUT (всі дні)
+│   │       ├── meal-presets/route.ts   # GET, PUT
+│   │       ├── targets/route.ts        # GET, PUT
+│   │       ├── macro-targets/route.ts  # GET, PUT
+│   │       ├── pinned/route.ts         # GET, PUT
+│   │       ├── meals-done/route.ts     # GET, PUT
+│   │       └── weight-log/route.ts     # GET, PUT
 │   ├── components/            # 10 React-компонентів (модалки, продукти, страви, статистика)
 │   ├── context/
 │   │   └── DataContext.tsx    # глобальний state + auto-save (debounce 500мс)
@@ -70,7 +87,8 @@ meal-builder-next/
 │   ├── hooks/                 # порожній — кандидат на винесення хуків з App.tsx
 │   ├── lib/                   # SERVER-ONLY
 │   │   ├── auth.ts            # createToken, verifyToken, set/get/clear cookie
-│   │   └── db.ts              # fs-based JSON DB (sync writes)
+│   │   ├── db.ts              # fs-based JSON DB (per-slice read/write + auto-migration)
+│   │   └── validators.ts      # type guards для тіл PUT-запитів
 │   ├── utils/
 │   │   ├── nutrients.ts       # розрахунки КБЖУ для продукту/страви
 │   │   └── exportPdf.ts       # window.open + document.write + window.print
@@ -90,14 +108,16 @@ meal-builder-next/
 
 1. `POST /api/auth/register` або `/login` → `bcrypt.compareSync` → `setAuthCookie({ userId, email })` → JWT (HS256, 30 днів) у cookie `mb-token` (`httpOnly`, `sameSite=lax`, `secure` у production).
 2. На кожен запит до сторінки **і** API `src/middleware.ts` перевіряє валідність токена (виключення: `/api/auth/*`, `/login`, `/_next/*`, `/favicon.ico`).
-3. API `/api/data` додатково перевіряє токен через `getAuthFromCookie()` — це **обов'язковий** дубль (middleware/proxy не покриває server functions).
+3. Кожен з 9 data-route handlers додатково перевіряє токен через `getAuthFromCookie()` — це **обов'язковий** дубль (middleware/proxy не покриває server functions).
 4. Logout: `POST /api/auth/logout` → `cookieStore.delete('mb-token')` → клієнт робить `window.location.href = '/login'`.
 
 ### Data flow
 
-- **Завантаження:** при mount `DataProvider` робить `GET /api/data` → отримує об'єкт `UserData` (`products`, `dishes`, `dailyMeals`, `targets`, `macroTargets`, `pinnedIds`, `mealsDone`, `mealPresets`, `weightLog`).
-- **Збереження:** будь-яка зміна локального state триггерить debounced (500мс) `PUT /api/data` з усім блобом `UserData`. Блок захищений `initialized.current = true` через 100мс після завантаження, щоб не зберегти defaults.
-- **Сервер:** `getUserData(userId)` читає `db/userdata/${userId}.json`, мерджить з `DEFAULT_USER_DATA`. `saveUserData` робить `fs.writeFileSync` (без блокувань — race condition, якщо запити одночасні).
+- **Завантаження:** при mount `DataProvider` робить **9 паралельних GET** (по одному на slice: `/api/products`, `/api/dishes`, `/api/meals`, `/api/meal-presets`, `/api/targets`, `/api/macro-targets`, `/api/pinned`, `/api/meals-done`, `/api/weight-log`).
+- **Збереження:** кожен slice має власний debounced (500мс) PUT через `useDebouncedSave`. Зміна одного slice (напр., `products`) НЕ триггерить PUT інших — кожен endpoint валідує тільки свою форму, тож пошкоджений запит не може стерти інші дані. Блок захищений `initialized.current = true` через 100мс після завантаження, щоб не зберегти defaults.
+- **Сервер:** `readSlice<K>(userId, key)` / `writeSlice<K>(userId, key, value)` працюють з `db/userdata/{userId}/{slice}.json`. На першому доступі автоматично мігрує застарілий монолітний файл `db/userdata/{userId}.json` у per-slice layout (idempotent, non-destructive).
+- **Валідація:** кожен PUT route використовує type guard з `src/lib/validators.ts` (`isProductArray`, `isDailyMeals` тощо). Невалідне тіло → `400 Invalid shape`.
+- `fs.writeFileSync` все ще без блокувань — race condition при concurrent writes лишається технічним боргом.
 
 ### Drag & drop
 
@@ -148,7 +168,7 @@ npm run lint     # eslint
 ## Ключові інваріанти, які легко зламати
 
 1. **Не імпортуйте `src/lib/auth.ts` чи `src/lib/db.ts` у файли з `'use client'`** — вони використовують `fs` і `next/headers`. Імпорт лише з route handlers або серверних компонентів.
-2. **Не додавайте поле в `UserData`** в одному місці — синхронізуйте у трьох: `src/types.ts` (бажано), `src/lib/db.ts` (`UserData` + `DEFAULT_USER_DATA`), `src/context/DataContext.tsx` (`UserData` + `DEFAULTS` + state + ефект).
+2. **Не додавайте поле в `UserData`** без синхронізації: тип у `src/types.ts` → defaults і файл-мапа в `src/lib/db.ts` (`SLICE_FILES`, `SLICE_DEFAULTS`) → type guard у `src/lib/validators.ts` → новий `route.ts` у `src/app/api/...` → state + endpoint + `useDebouncedSave` у `src/context/DataContext.tsx`.
 3. **Не покладайтеся** на middleware/proxy для авторизації API — кожен route handler **сам** перевіряє `getAuthFromCookie()`.
 4. **Не міняйте формат `MealItem.sourceType`** без міграції наявних `db/userdata/*.json` — вони містять рядки `'product'` / `'dish'`.
 5. **Не виводьте `passwordHash`** в API-відповідях.
@@ -161,9 +181,8 @@ npm run lint     # eslint
 - `src/App.tsx` ~880 рядків — потрібне рефакторингове розділення (винести handlers у `src/hooks/`, JSX — на менші компоненти).
 - File-based DB без блокувань — race condition при concurrent writes. Для production — справжня БД (Postgres/SQLite через Prisma/Drizzle) або хоча б `proper-lockfile`.
 - `bcrypt.hashSync`/`compareSync` блокує event loop. Перейти на async версії при міграції з file-DB.
-- Дублювання типу `UserData` між server (`src/lib/db.ts`) і client (`src/context/DataContext.tsx`). Винести в `src/types.ts`.
 - `exportPdf` через `document.write` — браузери поступово припиняють це підтримувати.
-- Немає серверної валідації (zod/yup) на `/api/auth/register` і `/api/data`.
+- Немає серверної валідації на `/api/auth/register` (формат email, складність пароля). Слайс-роути валідуються type guards вручну — варто перейти на `zod`.
 - `src/hooks/` порожній — кандидат для винесення `useMealActions`, `useProductActions`, `useDateNav` з `App.tsx`.
 
 ## Корисні команди для дослідження

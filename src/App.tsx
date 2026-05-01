@@ -325,32 +325,6 @@ export default function App() {
     setPastePresetForMeal(null);
   };
 
-  const handleImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        if (data.products) setProducts(data.products);
-        if (data.dishes) setDishes(data.dishes);
-        if (data.dailyMeals) setDailyMeals(data.dailyMeals);
-        if (data.targets) setTargets(data.targets);
-        if (data.macroTargets) setMacroTargets(data.macroTargets);
-        if (data.pinnedIds) setPinnedIds(data.pinnedIds);
-        if (data.mealsDone) setMealsDone(data.mealsDone);
-        if (data.mealPresets) setMealPresets(data.mealPresets);
-        if (data.weightLog) setWeightLog(data.weightLog);
-      } catch {
-        alert('Невірний формат файлу');
-      }
-    };
-    input.click();
-  };
-
   const handleDeletePreset = (id: string) => {
     setMealPresets(prev => prev.filter(p => p.id !== id));
   };
@@ -439,12 +413,6 @@ export default function App() {
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <h1 className="text-base sm:text-xl font-bold text-gray-800">Meal Builder</h1>
               <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                <button
-                  onClick={handleImport}
-                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  Імпорт
-                </button>
                 <button
                   onClick={() => setShowStats(true)}
                   className="text-xs text-gray-400 hover:text-gray-600 transition-colors"

@@ -1,0 +1,381 @@
+{
+  "2026-04-28": {
+    "breakfast": [
+      {
+        "id": "8e68fa27-e338-4c1d-bd0f-ba79e98a3fae",
+        "sourceType": "product",
+        "sourceId": "e956bb21-c423-4109-9c00-d8d4394b8434",
+        "grams": 150
+      },
+      {
+        "id": "177fc603-e7fb-4ee6-819d-d60631ae5cd6",
+        "sourceType": "product",
+        "sourceId": "cfd3ecf0-04bf-4088-bb9d-f1d874803ddf",
+        "grams": 130
+      },
+      {
+        "id": "d61ebaaf-1fea-471c-be72-3442fddedfa7",
+        "sourceType": "product",
+        "sourceId": "f610acc1-a1d0-4646-b17b-7df95f6b04bb",
+        "grams": 120
+      },
+      {
+        "id": "f587757b-7ab6-4886-a470-32fbf46bfab6",
+        "sourceType": "product",
+        "sourceId": "dbbe92e4-1c2b-408d-9942-0573bc1534d6",
+        "grams": 60
+      },
+      {
+        "id": "92cce680-42dc-4218-a59f-7a1aab7a00dc",
+        "sourceType": "dish",
+        "sourceId": "635edee2-f1b4-4d66-b018-2eebb5884f6b",
+        "grams": 300
+      }
+    ],
+    "lunch": [
+      {
+        "id": "f26d11b2-b77f-406e-8f60-ad8dff731f21",
+        "sourceType": "product",
+        "sourceId": "115b3313-23ba-40e9-87aa-b7dd36611d3f",
+        "grams": 136.4
+      },
+      {
+        "id": "fff2263b-eca2-4ab3-a4d5-45c5042e57a6",
+        "sourceType": "product",
+        "sourceId": "2358bc92-0945-4d3e-9fb7-9fd73f9e1e0d",
+        "grams": 120
+      },
+      {
+        "id": "2069e6ca-6872-471c-8527-e383dfd5e90f",
+        "sourceType": "dish",
+        "sourceId": "f330e1c3-ec9e-41a0-a4c7-57acc1327232",
+        "grams": 180.8
+      },
+      {
+        "id": "a1a8d9ba-f543-4107-89a1-1a9d25553672",
+        "sourceType": "product",
+        "sourceId": "9ae0d1d7-c5bd-42c4-a0c5-73d1074965ea",
+        "grams": 92.7
+      }
+    ],
+    "dinner": [
+      {
+        "id": "18f1a2e0-8092-41be-b8ca-4847575242aa",
+        "sourceType": "product",
+        "sourceId": "115b3313-23ba-40e9-87aa-b7dd36611d3f",
+        "grams": 136.4
+      },
+      {
+        "id": "93fbf8d3-c39d-4d7d-b1d3-16ff0953a28a",
+        "sourceType": "dish",
+        "sourceId": "f330e1c3-ec9e-41a0-a4c7-57acc1327232",
+        "grams": 90.4
+      },
+      {
+        "id": "c724deff-7f3a-4dd4-9f87-4d50d1162332",
+        "sourceType": "product",
+        "sourceId": "dc18781a-da14-45f1-8072-57a97158a26d",
+        "grams": 257.7
+      },
+      {
+        "id": "6101ca9f-6ce6-4a41-acc6-7b4b97e948c4",
+        "sourceType": "product",
+        "sourceId": "1083a0d6-1b42-4651-93a8-21b50ecb6b88",
+        "grams": 250
+      }
+    ],
+    "snacks": []
+  },
+  "2026-04-29": {
+    "breakfast": [
+      {
+        "id": "d9073f8d-5f4d-4799-bc00-680ce1f662f4",
+        "sourceType": "product",
+        "sourceId": "e956bb21-c423-4109-9c00-d8d4394b8434",
+        "grams": 150
+      },
+      {
+        "id": "d7850473-74c7-4458-b753-f66b6cabfe49",
+        "sourceType": "product",
+        "sourceId": "cfd3ecf0-04bf-4088-bb9d-f1d874803ddf",
+        "grams": 130
+      },
+      {
+        "id": "71a21ac4-0ab4-4420-b06a-9734f153cf11",
+        "sourceType": "product",
+        "sourceId": "f610acc1-a1d0-4646-b17b-7df95f6b04bb",
+        "grams": 120
+      },
+      {
+        "id": "448ffa4c-85ce-40aa-b206-db38cf09596e",
+        "sourceType": "product",
+        "sourceId": "dbbe92e4-1c2b-408d-9942-0573bc1534d6",
+        "grams": 60
+      },
+      {
+        "id": "fec7f62a-971e-4840-afae-e85c7a4b006b",
+        "sourceType": "dish",
+        "sourceId": "635edee2-f1b4-4d66-b018-2eebb5884f6b",
+        "grams": 300
+      }
+    ],
+    "lunch": [
+      {
+        "id": "84f39112-6637-4c2a-9f12-9f0380828f21",
+        "sourceType": "product",
+        "sourceId": "115b3313-23ba-40e9-87aa-b7dd36611d3f",
+        "grams": 136.4
+      },
+      {
+        "id": "c6ed5d78-0664-4ef1-84e5-fdb40e102d6a",
+        "sourceType": "product",
+        "sourceId": "2358bc92-0945-4d3e-9fb7-9fd73f9e1e0d",
+        "grams": 120
+      },
+      {
+        "id": "1afbbc4e-e7fb-48ba-b545-e9754822dfeb",
+        "sourceType": "dish",
+        "sourceId": "f330e1c3-ec9e-41a0-a4c7-57acc1327232",
+        "grams": 180.8
+      },
+      {
+        "id": "da067959-f617-4daf-9899-b8ef6554e1d1",
+        "sourceType": "product",
+        "sourceId": "9ae0d1d7-c5bd-42c4-a0c5-73d1074965ea",
+        "grams": 92.7
+      }
+    ],
+    "dinner": [
+      {
+        "id": "f636bb19-2b3b-484b-8c04-b18a2dc27824",
+        "sourceType": "product",
+        "sourceId": "115b3313-23ba-40e9-87aa-b7dd36611d3f",
+        "grams": 136.4
+      },
+      {
+        "id": "d9074f55-af4c-430e-acb7-12c3102eeb95",
+        "sourceType": "dish",
+        "sourceId": "f330e1c3-ec9e-41a0-a4c7-57acc1327232",
+        "grams": 90.4
+      },
+      {
+        "id": "6fbabdc8-69c0-4003-a6d9-e258e3ca3054",
+        "sourceType": "product",
+        "sourceId": "dc18781a-da14-45f1-8072-57a97158a26d",
+        "grams": 257.7
+      },
+      {
+        "id": "1d2ffdd3-e170-4d9c-b784-807fe0089171",
+        "sourceType": "product",
+        "sourceId": "1083a0d6-1b42-4651-93a8-21b50ecb6b88",
+        "grams": 250
+      },
+      {
+        "id": "f41c6528-58b7-4c7c-9b0f-141e837fbe25",
+        "sourceType": "product",
+        "sourceId": "c22c4336-f489-4062-91ac-53346a53b5da",
+        "grams": 200
+      }
+    ],
+    "snacks": []
+  },
+  "2026-04-30": {
+    "breakfast": [
+      {
+        "id": "63b708a8-e2ac-44b8-9ad7-eeda33746bd8",
+        "sourceType": "product",
+        "sourceId": "e956bb21-c423-4109-9c00-d8d4394b8434",
+        "grams": 150
+      },
+      {
+        "id": "5c05bdd8-76a1-4a05-8bd1-3f50a58c1a61",
+        "sourceType": "product",
+        "sourceId": "cfd3ecf0-04bf-4088-bb9d-f1d874803ddf",
+        "grams": 130
+      },
+      {
+        "id": "ce5773c1-cd45-43ad-abb3-bc2ba05b4da7",
+        "sourceType": "product",
+        "sourceId": "f610acc1-a1d0-4646-b17b-7df95f6b04bb",
+        "grams": 120
+      },
+      {
+        "id": "e95476d6-6736-45d6-8e2d-ab5a0a8b4ba4",
+        "sourceType": "product",
+        "sourceId": "dbbe92e4-1c2b-408d-9942-0573bc1534d6",
+        "grams": 60
+      },
+      {
+        "id": "83e002ea-fc04-42ab-85d5-20f8f9bb7355",
+        "sourceType": "dish",
+        "sourceId": "635edee2-f1b4-4d66-b018-2eebb5884f6b",
+        "grams": 300
+      }
+    ],
+    "lunch": [
+      {
+        "id": "f99d1ede-d1d0-4f06-a4ec-b41c9b9287aa",
+        "sourceType": "product",
+        "sourceId": "115b3313-23ba-40e9-87aa-b7dd36611d3f",
+        "grams": 136.4
+      },
+      {
+        "id": "8bdc8fbd-0138-4c81-bab2-8471213a18d2",
+        "sourceType": "product",
+        "sourceId": "2358bc92-0945-4d3e-9fb7-9fd73f9e1e0d",
+        "grams": 120
+      },
+      {
+        "id": "5694351f-030a-405e-87b2-bb137291f75c",
+        "sourceType": "dish",
+        "sourceId": "f330e1c3-ec9e-41a0-a4c7-57acc1327232",
+        "grams": 180.8
+      },
+      {
+        "id": "e795318e-87ca-4c8d-abf9-823a8760b06b",
+        "sourceType": "product",
+        "sourceId": "9ae0d1d7-c5bd-42c4-a0c5-73d1074965ea",
+        "grams": 92.7
+      }
+    ],
+    "dinner": [
+      {
+        "id": "2d7b5e49-be89-41ae-ad18-767c21f2cc79",
+        "sourceType": "product",
+        "sourceId": "115b3313-23ba-40e9-87aa-b7dd36611d3f",
+        "grams": 136.4
+      },
+      {
+        "id": "c5a25d20-399c-4137-ac9f-ab9086dd96f9",
+        "sourceType": "product",
+        "sourceId": "9e1365fc-0ad6-4b79-8d81-5628d767494f",
+        "grams": 285.7
+      },
+      {
+        "id": "023ceaed-0289-4f57-9a9f-4c99ae3a41a2",
+        "sourceType": "product",
+        "sourceId": "9ae0d1d7-c5bd-42c4-a0c5-73d1074965ea",
+        "grams": 92.7
+      },
+      {
+        "id": "031d532d-40fe-4e95-8f1a-e0b149aba032",
+        "sourceType": "product",
+        "sourceId": "cd277618-9235-48b2-847d-608d18f6e38b",
+        "grams": 230
+      },
+      {
+        "id": "f6617eff-0701-44ee-a736-45b257877dde",
+        "sourceType": "product",
+        "sourceId": "c22c4336-f489-4062-91ac-53346a53b5da",
+        "grams": 150
+      }
+    ],
+    "snacks": [
+      {
+        "id": "e6250bbe-1aae-494a-a4bf-991654a6f2a5",
+        "sourceType": "product",
+        "sourceId": "804a326c-fdb4-48b0-9fc1-447d9ae4fd61",
+        "grams": 22
+      }
+    ]
+  },
+  "2026-05-01": {
+    "breakfast": [
+      {
+        "id": "6b5a1389-daf9-44df-94e0-7b0d3ba90df2",
+        "sourceType": "product",
+        "sourceId": "e956bb21-c423-4109-9c00-d8d4394b8434",
+        "grams": 150
+      },
+      {
+        "id": "351602d5-41ad-4c0e-8782-4c973c24481b",
+        "sourceType": "product",
+        "sourceId": "cfd3ecf0-04bf-4088-bb9d-f1d874803ddf",
+        "grams": 130
+      },
+      {
+        "id": "962f0399-9b5a-428e-b3ba-f9ca302dc4be",
+        "sourceType": "product",
+        "sourceId": "f610acc1-a1d0-4646-b17b-7df95f6b04bb",
+        "grams": 120
+      },
+      {
+        "id": "73dd8036-4d29-4962-93a0-96f86ad9dfb2",
+        "sourceType": "product",
+        "sourceId": "dbbe92e4-1c2b-408d-9942-0573bc1534d6",
+        "grams": 60
+      },
+      {
+        "id": "19c9da15-22ae-4317-920e-f2af318c3b9c",
+        "sourceType": "dish",
+        "sourceId": "635edee2-f1b4-4d66-b018-2eebb5884f6b",
+        "grams": 300
+      }
+    ],
+    "lunch": [
+      {
+        "id": "32c4b363-8fc4-4151-aeca-4cc2a33c3af4",
+        "sourceType": "product",
+        "sourceId": "115b3313-23ba-40e9-87aa-b7dd36611d3f",
+        "grams": 136.4
+      },
+      {
+        "id": "d3c38106-3d41-48bb-9b5e-fa861e9bcc95",
+        "sourceType": "product",
+        "sourceId": "2358bc92-0945-4d3e-9fb7-9fd73f9e1e0d",
+        "grams": 120
+      },
+      {
+        "id": "c8248a22-48a9-4213-9ed3-471c8b7566c0",
+        "sourceType": "dish",
+        "sourceId": "f330e1c3-ec9e-41a0-a4c7-57acc1327232",
+        "grams": 180.8
+      },
+      {
+        "id": "61024ed2-8303-4de4-9b84-a9ab5c886957",
+        "sourceType": "product",
+        "sourceId": "9ae0d1d7-c5bd-42c4-a0c5-73d1074965ea",
+        "grams": 92.7
+      }
+    ],
+    "dinner": [],
+    "snacks": []
+  },
+  "2026-05-02": {
+    "breakfast": [],
+    "lunch": [
+      {
+        "id": "50dc01ca-8161-4820-ad31-51520145fbc6",
+        "sourceType": "product",
+        "sourceId": "115b3313-23ba-40e9-87aa-b7dd36611d3f",
+        "grams": 136.4
+      },
+      {
+        "id": "12bdee9f-b53a-49b4-8cf6-6bce97facffa",
+        "sourceType": "product",
+        "sourceId": "2358bc92-0945-4d3e-9fb7-9fd73f9e1e0d",
+        "grams": 120
+      },
+      {
+        "id": "9c04e86f-3404-4919-990e-3cf7305b5fe9",
+        "sourceType": "dish",
+        "sourceId": "f330e1c3-ec9e-41a0-a4c7-57acc1327232",
+        "grams": 180.8
+      },
+      {
+        "id": "f5bd91c5-f764-46d6-bfa6-1621537eb4db",
+        "sourceType": "product",
+        "sourceId": "9ae0d1d7-c5bd-42c4-a0c5-73d1074965ea",
+        "grams": 92.7
+      }
+    ],
+    "dinner": [],
+    "snacks": []
+  },
+  "2026-05-03": {
+    "breakfast": [],
+    "lunch": [],
+    "dinner": [],
+    "snacks": []
+  }
+}

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "e48a525e-5293-44ae-b059-20a2d4aa1cba",
+    "name": "Обід",
+    "items": [
+      {
+        "id": "f26d11b2-b77f-406e-8f60-ad8dff731f21",
+        "sourceType": "product",
+        "sourceId": "115b3313-23ba-40e9-87aa-b7dd36611d3f",
+        "grams": 136.4
+      },
+      {
+        "id": "fff2263b-eca2-4ab3-a4d5-45c5042e57a6",
+        "sourceType": "product",
+        "sourceId": "2358bc92-0945-4d3e-9fb7-9fd73f9e1e0d",
+        "grams": 120
+      },
+      {
+        "id": "2069e6ca-6872-471c-8527-e383dfd5e90f",
+        "sourceType": "dish",
+        "sourceId": "f330e1c3-ec9e-41a0-a4c7-57acc1327232",
+        "grams": 180.8
+      },
+      {
+        "id": "a1a8d9ba-f543-4107-89a1-1a9d25553672",
+        "sourceType": "product",
+        "sourceId": "9ae0d1d7-c5bd-42c4-a0c5-73d1074965ea",
+        "grams": 92.7
+      }
+    ]
+  },
+  {
+    "id": "10f1fb71-ecf4-476c-aa2f-ce3b8a583766",
+    "name": "Вечеря №1",
+    "items": [
+      {
+        "id": "18f1a2e0-8092-41be-b8ca-4847575242aa",
+        "sourceType": "product",
+        "sourceId": "115b3313-23ba-40e9-87aa-b7dd36611d3f",
+        "grams": 136.4
+      },
+      {
+        "id": "93fbf8d3-c39d-4d7d-b1d3-16ff0953a28a",
+        "sourceType": "dish",
+        "sourceId": "f330e1c3-ec9e-41a0-a4c7-57acc1327232",
+        "grams": 90.4
+      },
+      {
+        "id": "c724deff-7f3a-4dd4-9f87-4d50d1162332",
+        "sourceType": "product",
+        "sourceId": "dc18781a-da14-45f1-8072-57a97158a26d",
+        "grams": 257.7
+      },
+      {
+        "id": "6101ca9f-6ce6-4a41-acc6-7b4b97e948c4",
+        "sourceType": "product",
+        "sourceId": "1083a0d6-1b42-4651-93a8-21b50ecb6b88",
+        "grams": 250
+      }
+    ]
+  }
+]

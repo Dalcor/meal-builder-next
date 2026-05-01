@@ -37,7 +37,7 @@ const cookieStore = cookies();
 
 ### 1.3 Route handlers — серверна перевірка авторизації
 
-`proxy.ts` (раніше middleware) **не гарантує** захист API routes для server functions та edge cases. Кожен route handler у `src/app/api/**/route.ts` має **самостійно** викликати `getAuthFromCookie()` (як це робить `/api/data`).
+`proxy.ts` (раніше middleware) **не гарантує** захист API routes для server functions та edge cases. Кожен route handler у `src/app/api/**/route.ts` має **самостійно** викликати `getAuthFromCookie()` (як це роблять усі 9 data-роутів — `/api/products`, `/api/dishes` тощо).
 
 > **Перевірка під час ревью:** будь-який новий route handler у захищеній зоні має містити:
 > ```ts
@@ -81,7 +81,7 @@ API routes **не мають** жорсткої валідації:
 
 ### 2.4 Захист даних користувача
 
-- `/api/data` коректно обмежує доступ через `auth.userId` — переконайтеся, що **жоден новий ендпоінт** не приймає `userId` з тіла/query, а завжди бере його з токена.
+- Кожен з 9 data-ендпоінтів коректно обмежує доступ через `auth.userId` з cookie — переконайтеся, що **жоден новий ендпоінт** не приймає `userId` з тіла/query, а завжди бере його з токена.
 - Шлях до файлу будується як `userdata/${userId}.json` — `userId` походить з підписаного JWT, тож path traversal неможливий. Якщо колись з'явиться вхід на основі вводу користувача — додайте sanitization.
 
 ### 2.5 Race conditions у файловому сховищі
@@ -112,7 +112,8 @@ API routes **не мають** жорсткої валідації:
 `src/context/DataContext.tsx` робить debounced PUT всіх даних на кожну зміну (500мс). Перевірте:
 - Чи не забули покрити нове поле в трьох місцях: `UserData`, `DEFAULTS`, `useEffect` для збереження.
 - Чи не зламали flag `initialized.current` — він блокує запис на першому rendering після завантаження.
-- Чи не додають нові виклики `fetch('/api/data')` поза цим контекстом.
+- Чи не додають нові виклики `fetch('/api/...')` поза `useDebouncedSave` без явної причини.
+- Якщо додано новий slice — є відповідний type guard у `src/lib/validators.ts` і route викликає його у PUT.
 
 ### 3.3 ID для нових сутностей
 

@@ -89,6 +89,46 @@ function backfillSnapshots(
 
 type BaselinesRef = React.MutableRefObject<Partial<UserData>>;
 
+// Persist `value` to `endpoint` with bounded retries. Network blips and
+// brief Vercel function unavailability during a deploy are common; we
+// retry transient failures so the user's edit survives. Validation
+// failures (4xx) are NOT retried — those are bugs in our code that
+// repeating won't fix, but we DO log them so they show up in DevTools
+// rather than disappearing into a silent .catch.
+async function persistSlice(endpoint: string, body: string): Promise<void> {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const r = await fetch(endpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      });
+      if (r.ok) return;
+      if (r.status >= 400 && r.status < 500) {
+        console.error(
+          `[meal-builder] PUT ${endpoint} → ${r.status}; not retrying. ` +
+            `Body shape was likely rejected by the validator.`,
+        );
+        return;
+      }
+      console.warn(
+        `[meal-builder] PUT ${endpoint} → ${r.status} (attempt ${attempt}/${maxAttempts})`,
+      );
+    } catch (err) {
+      console.warn(
+        `[meal-builder] PUT ${endpoint} network error (attempt ${attempt}/${maxAttempts}):`,
+        err,
+      );
+    }
+    if (attempt < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 400 * attempt));
+    }
+  }
+  console.error(`[meal-builder] PUT ${endpoint} gave up after ${maxAttempts} attempts`);
+}
+
 // Persists `value` to `endpoint` with a debounce, but only when `value`
 // differs (by reference) from the last successfully-saved baseline. The
 // baseline is seeded from the bootstrap fetch, so the immediate
@@ -120,12 +160,7 @@ function useDebouncedSliceSave<K extends keyof UserData>(
     const captured = value;
     const timer = setTimeout(() => {
       baselines.current[key] = captured;
-      fetch(endpoint, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(captured),
-        keepalive: true,
-      }).catch(() => {});
+      persistSlice(endpoint, JSON.stringify(captured));
     }, delayMs);
     return () => clearTimeout(timer);
   }, [key, endpoint, value, ready, baselines, delayMs]);
@@ -138,6 +173,7 @@ function useDebouncedSliceSave<K extends keyof UserData>(
     const flush = () => {
       const current = valueRef.current;
       if (baselines.current[key] === current) return;
+      // Single best-effort fire (no retries — the page is going away).
       try {
         fetch(endpoint, {
           method: 'PUT',
@@ -147,8 +183,7 @@ function useDebouncedSliceSave<K extends keyof UserData>(
         });
         baselines.current[key] = current;
       } catch {
-        // best-effort: if the keepalive request can't be queued there's
-        // nothing else we can do at unload time.
+        // can't surface anything at unload time
       }
     };
     window.addEventListener('pagehide', flush);

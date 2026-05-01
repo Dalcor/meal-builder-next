@@ -131,8 +131,12 @@ export default function App() {
 
   const handleEditProduct = (data: Omit<Product, 'id'>) => {
     if (!editingProduct) return;
+    // Replace the product entirely — using `{ ...p, ...data }` here would
+    // leak old optional fields (e.g. `unit` when the user unchecked
+    // "Зберігати в штуках"), because the form omits absent keys instead
+    // of setting them to undefined.
     setProducts(prev =>
-      prev.map(p => (p.id === editingProduct.id ? { ...p, ...data } : p))
+      prev.map(p => (p.id === editingProduct.id ? { id: p.id, ...data } : p))
     );
     setEditingProduct(null);
   };

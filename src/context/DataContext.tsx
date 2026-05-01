@@ -62,19 +62,11 @@ function backfillSnapshots(
   presets: MealPreset[],
   products: Product[],
   dishes: Dish[],
-): {
-  meals: Record<string, Meals>;
-  presets: MealPreset[];
-  changed: { meals: boolean; presets: boolean };
-} {
-  let mealsTouched = false;
-  let presetsTouched = false;
-
-  const enrichItem = (item: MealItem, mark: () => void): MealItem => {
+): { meals: Record<string, Meals>; presets: MealPreset[] } {
+  const enrichItem = (item: MealItem): MealItem => {
     if (item.snapshot) return item;
     const live = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
     if (!live) return item;
-    mark();
     if (item.sourceType === 'product') {
       const unit = products.find(p => p.id === item.sourceId)?.unit;
       return { ...item, snapshot: unit ? { ...live, unit } : live };
@@ -82,50 +74,86 @@ function backfillSnapshots(
     return { ...item, snapshot: live };
   };
 
-  const markMeals = () => {
-    mealsTouched = true;
-  };
-  const markPresets = () => {
-    presetsTouched = true;
-  };
-
   const enrichedDaily: Record<string, Meals> = {};
   for (const [date, dayMeals] of Object.entries(daily)) {
     enrichedDaily[date] = {
-      breakfast: dayMeals.breakfast.map(i => enrichItem(i, markMeals)),
-      lunch: dayMeals.lunch.map(i => enrichItem(i, markMeals)),
-      dinner: dayMeals.dinner.map(i => enrichItem(i, markMeals)),
-      snacks: dayMeals.snacks.map(i => enrichItem(i, markMeals)),
+      breakfast: dayMeals.breakfast.map(enrichItem),
+      lunch: dayMeals.lunch.map(enrichItem),
+      dinner: dayMeals.dinner.map(enrichItem),
+      snacks: dayMeals.snacks.map(enrichItem),
     };
   }
-  const enrichedPresets = presets.map(p => ({
-    ...p,
-    items: p.items.map(i => enrichItem(i, markPresets)),
-  }));
-  return {
-    meals: enrichedDaily,
-    presets: enrichedPresets,
-    changed: { meals: mealsTouched, presets: presetsTouched },
-  };
+  const enrichedPresets = presets.map(p => ({ ...p, items: p.items.map(enrichItem) }));
+  return { meals: enrichedDaily, presets: enrichedPresets };
 }
 
-function useDebouncedSave<T>(
+type BaselinesRef = React.MutableRefObject<Partial<UserData>>;
+
+// Persists `value` to `endpoint` with a debounce, but only when `value`
+// differs (by reference) from the last successfully-saved baseline. The
+// baseline is seeded from the bootstrap fetch, so the immediate
+// post-bootstrap render does NOT cause a redundant save of the just-
+// loaded data. Crucially, it also does NOT depend on a timer-based
+// "initialized" flag — the previous implementation lost any user edit
+// made in the first ~100ms after loading, because an explicit save
+// fired with a stale captured value.
+function useDebouncedSliceSave<K extends keyof UserData>(
+  key: K,
   endpoint: string,
-  value: T,
-  enabled: React.RefObject<boolean>,
+  value: UserData[K],
+  ready: boolean,
+  baselines: BaselinesRef,
   delayMs = 500,
 ) {
+  // Mirror the current state value into a ref so the pagehide flush below
+  // can reach the latest version even though it lives in a separate effect.
+  const valueRef = useRef(value);
   useEffect(() => {
-    if (!enabled.current) return;
+    valueRef.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const base = baselines.current[key];
+    if (base === undefined) return; // bootstrap hasn't populated baselines yet
+    if (base === value) return; // unchanged from last persisted state
+    const captured = value;
     const timer = setTimeout(() => {
+      baselines.current[key] = captured;
       fetch(endpoint, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(value),
+        body: JSON.stringify(captured),
+        keepalive: true,
       }).catch(() => {});
     }, delayMs);
     return () => clearTimeout(timer);
-  }, [endpoint, value, enabled, delayMs]);
+  }, [key, endpoint, value, ready, baselines, delayMs]);
+
+  // Flush any unsaved change synchronously when the tab is hidden / closed
+  // (mobile browsers may never run the debounce timer otherwise). The
+  // request is sent with `keepalive: true` so it survives page unload.
+  useEffect(() => {
+    if (!ready) return;
+    const flush = () => {
+      const current = valueRef.current;
+      if (baselines.current[key] === current) return;
+      try {
+        fetch(endpoint, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(current),
+          keepalive: true,
+        });
+        baselines.current[key] = current;
+      } catch {
+        // best-effort: if the keepalive request can't be queued there's
+        // nothing else we can do at unload time.
+      }
+    };
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, [key, endpoint, ready, baselines]);
 }
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
@@ -139,9 +167,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [mealsDone, setMealsDone] = useState<Record<string, Partial<Record<MealType, boolean>>>>(DEFAULTS.mealsDone);
   const [mealPresets, setMealPresets] = useState<MealPreset[]>(DEFAULTS.mealPresets);
   const [weightLog, setWeightLog] = useState<Record<string, number>>(DEFAULTS.weightLog);
-  const initialized = useRef(false);
 
-  // Load all slices in parallel on mount.
+  const baselines = useRef<Partial<UserData>>({});
+
   useEffect(() => {
     let cancelled = false;
     const fetchSlice = <K extends keyof UserData>(key: K): Promise<UserData[K]> =>
@@ -160,53 +188,61 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       fetchSlice('mealPresets'),
       fetchSlice('weightLog'),
     ]).then(([
-      products,
-      dishes,
-      dailyMeals,
-      targets,
-      macroTargets,
-      pinnedIds,
-      mealsDone,
-      mealPresets,
-      weightLog,
+      productsData,
+      dishesData,
+      dailyMealsData,
+      targetsData,
+      macroTargetsData,
+      pinnedIdsData,
+      mealsDoneData,
+      mealPresetsData,
+      weightLogData,
     ]) => {
       if (cancelled) return;
-      const safeProducts = products ?? DEFAULTS.products;
-      const safeDishes = dishes ?? DEFAULTS.dishes;
-      const rawMeals = dailyMeals ?? DEFAULTS.dailyMeals;
-      const rawPresets = mealPresets ?? DEFAULTS.mealPresets;
-      const { meals: enrichedMeals, presets: enrichedPresets, changed } =
-        backfillSnapshots(rawMeals, rawPresets, safeProducts, safeDishes);
+      const safeProducts = productsData ?? DEFAULTS.products;
+      const safeDishes = dishesData ?? DEFAULTS.dishes;
+      const rawMeals = dailyMealsData ?? DEFAULTS.dailyMeals;
+      const rawPresets = mealPresetsData ?? DEFAULTS.mealPresets;
+      const safeTargets = targetsData ?? DEFAULTS.targets;
+      const safeMacroTargets = macroTargetsData ?? DEFAULTS.macroTargets;
+      const safePinnedIds = pinnedIdsData ?? DEFAULTS.pinnedIds;
+      const safeMealsDone = mealsDoneData ?? DEFAULTS.mealsDone;
+      const safeWeightLog = weightLogData ?? DEFAULTS.weightLog;
+
+      const { meals: enrichedMeals, presets: enrichedPresets } = backfillSnapshots(
+        rawMeals,
+        rawPresets,
+        safeProducts,
+        safeDishes,
+      );
+
+      // Seed baselines BEFORE setStates so the effects fired by the
+      // upcoming render compare the new value to the correct baseline.
+      // For dailyMeals/mealPresets we seed the RAW (pre-enrichment) value,
+      // so the enriched setState triggers exactly one save per affected
+      // slice (which persists the snapshots).
+      baselines.current = {
+        products: safeProducts,
+        dishes: safeDishes,
+        dailyMeals: rawMeals,
+        targets: safeTargets,
+        macroTargets: safeMacroTargets,
+        pinnedIds: safePinnedIds,
+        mealsDone: safeMealsDone,
+        mealPresets: rawPresets,
+        weightLog: safeWeightLog,
+      };
+
       setProducts(safeProducts);
       setDishes(safeDishes);
       setDailyMeals(enrichedMeals);
-      setTargets(targets ?? DEFAULTS.targets);
-      setMacroTargets(macroTargets ?? DEFAULTS.macroTargets);
-      setPinnedIds(pinnedIds ?? DEFAULTS.pinnedIds);
-      setMealsDone(mealsDone ?? DEFAULTS.mealsDone);
+      setTargets(safeTargets);
+      setMacroTargets(safeMacroTargets);
+      setPinnedIds(safePinnedIds);
+      setMealsDone(safeMealsDone);
       setMealPresets(enrichedPresets);
-      setWeightLog(weightLog ?? DEFAULTS.weightLog);
+      setWeightLog(safeWeightLog);
       setLoading(false);
-      setTimeout(() => {
-        initialized.current = true;
-        // useDebouncedSave's effects already fired with initialized=false
-        // for the enriched values, so they skipped. Persist the backfill
-        // explicitly here, once, only if it actually changed something.
-        if (changed.meals) {
-          fetch(ENDPOINTS.dailyMeals, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(enrichedMeals),
-          }).catch(() => {});
-        }
-        if (changed.presets) {
-          fetch(ENDPOINTS.mealPresets, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(enrichedPresets),
-          }).catch(() => {});
-        }
-      }, 100);
     });
 
     return () => {
@@ -214,18 +250,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Per-slice debounced auto-save. Each slice is sent only when its own
-  // value reference changes, so a change to e.g. `weightLog` does not
-  // re-PUT the entire user data blob.
-  useDebouncedSave(ENDPOINTS.products, products, initialized);
-  useDebouncedSave(ENDPOINTS.dishes, dishes, initialized);
-  useDebouncedSave(ENDPOINTS.dailyMeals, dailyMeals, initialized);
-  useDebouncedSave(ENDPOINTS.targets, targets, initialized);
-  useDebouncedSave(ENDPOINTS.macroTargets, macroTargets, initialized);
-  useDebouncedSave(ENDPOINTS.pinnedIds, pinnedIds, initialized);
-  useDebouncedSave(ENDPOINTS.mealsDone, mealsDone, initialized);
-  useDebouncedSave(ENDPOINTS.mealPresets, mealPresets, initialized);
-  useDebouncedSave(ENDPOINTS.weightLog, weightLog, initialized);
+  const ready = !loading;
+  useDebouncedSliceSave('products', ENDPOINTS.products, products, ready, baselines);
+  useDebouncedSliceSave('dishes', ENDPOINTS.dishes, dishes, ready, baselines);
+  useDebouncedSliceSave('dailyMeals', ENDPOINTS.dailyMeals, dailyMeals, ready, baselines);
+  useDebouncedSliceSave('targets', ENDPOINTS.targets, targets, ready, baselines);
+  useDebouncedSliceSave('macroTargets', ENDPOINTS.macroTargets, macroTargets, ready, baselines);
+  useDebouncedSliceSave('pinnedIds', ENDPOINTS.pinnedIds, pinnedIds, ready, baselines);
+  useDebouncedSliceSave('mealsDone', ENDPOINTS.mealsDone, mealsDone, ready, baselines);
+  useDebouncedSliceSave('mealPresets', ENDPOINTS.mealPresets, mealPresets, ready, baselines);
+  useDebouncedSliceSave('weightLog', ENDPOINTS.weightLog, weightLog, ready, baselines);
 
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });

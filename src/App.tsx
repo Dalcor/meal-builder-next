@@ -72,10 +72,13 @@ type LeftTab = 'products' | 'dishes';
 
 export default function App() {
   const {
-    products, dishes, setDishes, dailyMeals, setDailyMeals,
+    products, dishes, dailyMeals,
     targets, setTargets, macroTargets, setMacroTargets, pinnedIds,
-    mealsDone, setMealsDone, mealPresets, setMealPresets, weightLog, setWeightLog,
+    mealsDone, mealPresets, weightLog,
     addProduct, updateProduct, removeProduct, pinProduct, unpinProduct,
+    addDish, updateDish, removeDish,
+    setMealsForDate, addMealPreset, removeMealPreset,
+    setMealsDoneForDate, setWeightForDate, deleteWeightForDate,
     loading, logout,
   } = useUserData();
 
@@ -87,11 +90,13 @@ export default function App() {
     [dailyMeals, selectedDate]
   );
 
+  // Updates the current day's meals. Pulls latest day state via the
+  // updater (taking current `meals`, computing new) then fires a per-day
+  // PUT through setMealsForDate.
   const setMeals = (updater: (prev: Meals) => Meals) => {
-    setDailyMeals(prev => ({
-      ...prev,
-      [selectedDate]: updater(prev[selectedDate] ?? { ...EMPTY_MEALS }),
-    }));
+    const currentMeals = dailyMeals[selectedDate] ?? { ...EMPTY_MEALS };
+    const newMeals = updater(currentMeals);
+    setMealsForDate(selectedDate, newMeals);
   };
 
   const [leftTab, setLeftTab] = useState<LeftTab>('products');
@@ -154,18 +159,16 @@ export default function App() {
   // --- Dishes ---
   const handleSaveDish = (name: string, ingredients: DishIngredient[], fixedPortion: boolean) => {
     if (editingDish) {
-      setDishes(prev =>
-        prev.map(d => (d.id === editingDish.id ? { ...d, name, ingredients, fixedPortion } : d))
-      );
+      updateDish({ ...editingDish, name, ingredients, fixedPortion });
       setEditingDish(null);
     } else {
-      setDishes(prev => [...prev, { id: generateId(), name, ingredients, fixedPortion }]);
+      addDish({ id: generateId(), name, ingredients, fixedPortion });
     }
     setShowDishConstructor(false);
   };
 
   const handleDeleteDish = (id: string) => {
-    setDishes(prev => prev.filter(d => d.id !== id));
+    removeDish(id);
     // Past meal items keep their snapshot, so historical days still
     // show the dish that was eaten with the original ingredient list.
   };
@@ -341,7 +344,7 @@ export default function App() {
   const confirmSavePreset = (name: string) => {
     if (!savePresetModal) return;
     const items = meals[savePresetModal.type];
-    setMealPresets(prev => [...prev, { id: generateId(), name, items: [...items] }]);
+    addMealPreset({ id: generateId(), name, items: [...items] });
     setSavePresetModal(null);
   };
 
@@ -355,7 +358,7 @@ export default function App() {
   };
 
   const handleDeletePreset = (id: string) => {
-    setMealPresets(prev => prev.filter(p => p.id !== id));
+    removeMealPreset(id);
   };
 
   const mealMatchesPreset = (mealType: MealType): boolean => {
@@ -446,14 +449,28 @@ export default function App() {
     return result;
   }, [sortedProducts, pinnedIds, productSearch]);
 
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const COLLAPSED_CATEGORIES_KEY = 'mb-collapsed-categories';
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const stored = window.localStorage.getItem(COLLAPSED_CATEGORIES_KEY);
+      if (!stored) return new Set();
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? new Set(parsed.filter((s): s is string => typeof s === 'string')) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
   const toggleCategoryCollapsed = (name: string) => {
     setCollapsedCategories(prev => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name);
       else next.add(name);
+      try {
+        window.localStorage.setItem(COLLAPSED_CATEGORIES_KEY, JSON.stringify([...next]));
+      } catch {
+        // ignore quota / private mode failures
+      }
       return next;
     });
   };
@@ -934,13 +951,13 @@ export default function App() {
                 onPastePreset={() => setPastePresetForMeal(type)}
                 hasMatchingPreset={mealMatchesPreset(type)}
                 done={!!mealsDone[selectedDate]?.[type]}
-                onToggleDone={() => setMealsDone(prev => ({
-                  ...prev,
-                  [selectedDate]: {
-                    ...prev[selectedDate],
-                    [type]: !prev[selectedDate]?.[type],
-                  },
-                }))}
+                onToggleDone={() => {
+                  const currentForDate = mealsDone[selectedDate] ?? {};
+                  setMealsDoneForDate(selectedDate, {
+                    ...currentForDate,
+                    [type]: !currentForDate[type],
+                  });
+                }}
               />
             ))}
           </main>
@@ -1048,12 +1065,8 @@ export default function App() {
           dishes={dishes}
           selectedDate={selectedDate}
           onWeightChange={(date, weight) => {
-            setWeightLog(prev => {
-              const next = { ...prev };
-              if (weight === null) delete next[date];
-              else next[date] = weight;
-              return next;
-            });
+            if (weight === null) deleteWeightForDate(date);
+            else setWeightForDate(date, weight);
           }}
           onClose={() => setShowStats(false)}
         />

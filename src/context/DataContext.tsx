@@ -15,20 +15,33 @@ import type {
 import { getSourceNutrients } from '@/utils/nutrients';
 
 interface DataContextValue extends UserData {
-  setDishes: React.Dispatch<React.SetStateAction<Dish[]>>;
-  setDailyMeals: React.Dispatch<React.SetStateAction<Record<string, Meals>>>;
+  // Targets and macroTargets stay as blob slices (single objects, no
+  // multi-tab risk worth granular ops).
   setTargets: React.Dispatch<React.SetStateAction<MealTargets>>;
   setMacroTargets: React.Dispatch<React.SetStateAction<MacroTargets>>;
-  setMealsDone: React.Dispatch<React.SetStateAction<Record<string, Partial<Record<MealType, boolean>>>>>;
-  setMealPresets: React.Dispatch<React.SetStateAction<MealPreset[]>>;
-  setWeightLog: React.Dispatch<React.SetStateAction<Record<string, number>>>;
-  // Granular ops for products + pinned: each call hits a per-id endpoint,
-  // so two tabs editing different items don't clobber each other.
+
+  // Granular per-item ops. Each one optimistically updates local state,
+  // fires a per-id/per-date request, and reverts on failure.
   addProduct: (product: Product) => Promise<boolean>;
   updateProduct: (product: Product) => Promise<boolean>;
   removeProduct: (productId: string) => Promise<boolean>;
   pinProduct: (productId: string) => Promise<boolean>;
   unpinProduct: (productId: string) => Promise<boolean>;
+
+  addDish: (dish: Dish) => Promise<boolean>;
+  updateDish: (dish: Dish) => Promise<boolean>;
+  removeDish: (dishId: string) => Promise<boolean>;
+
+  setMealsForDate: (date: string, meals: Meals) => Promise<boolean>;
+  deleteMealsForDate: (date: string) => Promise<boolean>;
+
+  addMealPreset: (preset: MealPreset) => Promise<boolean>;
+  removeMealPreset: (presetId: string) => Promise<boolean>;
+
+  setMealsDoneForDate: (date: string, flags: Partial<Record<MealType, boolean>>) => Promise<boolean>;
+  setWeightForDate: (date: string, weight: number) => Promise<boolean>;
+  deleteWeightForDate: (date: string) => Promise<boolean>;
+
   loading: boolean;
   logout: () => Promise<void>;
 }
@@ -295,20 +308,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const ready = !loading;
-  // Discrete slices change once per user action (click / drag / toggle),
-  // so a tiny debounce is enough to coalesce React's batched re-renders.
-  // The two `*Targets` slices are bound to <input type="number"> fields
-  // that update on every keystroke, so they need real batching.
-  // `products` and `pinnedIds` are NOT debounced here — they go through
-  // the granular helpers below (addProduct, pinProduct, etc.) so two
-  // tabs can mutate different items without clobbering each other.
-  useDebouncedSliceSave('dishes', ENDPOINTS.dishes, dishes, ready, baselines, 50);
-  useDebouncedSliceSave('dailyMeals', ENDPOINTS.dailyMeals, dailyMeals, ready, baselines, 50);
+  // Only the two singular *Targets slices are still saved as a blob —
+  // they're single objects bound to <input type="number"> fields that
+  // update on every keystroke, so they need real keystroke batching.
+  // Everything else goes through the granular helpers below.
   useDebouncedSliceSave('targets', ENDPOINTS.targets, targets, ready, baselines, 400);
   useDebouncedSliceSave('macroTargets', ENDPOINTS.macroTargets, macroTargets, ready, baselines, 400);
-  useDebouncedSliceSave('mealsDone', ENDPOINTS.mealsDone, mealsDone, ready, baselines, 50);
-  useDebouncedSliceSave('mealPresets', ENDPOINTS.mealPresets, mealPresets, ready, baselines, 50);
-  useDebouncedSliceSave('weightLog', ENDPOINTS.weightLog, weightLog, ready, baselines, 50);
 
   // ---------- Granular mutators for products + pinned ----------
   // These optimistically update local state, then fire the granular
@@ -420,6 +425,274 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // ---------- Dishes ----------
+
+  const addDish = async (dish: Dish): Promise<boolean> => {
+    setDishes(prev => [...prev, dish]);
+    try {
+      const r = await fetch(ENDPOINTS.dishes, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dish),
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`POST ${ENDPOINTS.dishes} → ${r.status}`);
+      return true;
+    } catch (err) {
+      setDishes(prev => prev.filter(d => d.id !== dish.id));
+      console.error('[meal-builder] addDish failed:', err);
+      return false;
+    }
+  };
+
+  const updateDish = async (dish: Dish): Promise<boolean> => {
+    let prev: Dish | undefined;
+    setDishes(curr => {
+      prev = curr.find(d => d.id === dish.id);
+      return curr.map(d => (d.id === dish.id ? dish : d));
+    });
+    try {
+      const r = await fetch(`${ENDPOINTS.dishes}/${encodeURIComponent(dish.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dish),
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`PUT ${ENDPOINTS.dishes}/${dish.id} → ${r.status}`);
+      return true;
+    } catch (err) {
+      if (prev) {
+        const restore = prev;
+        setDishes(curr => curr.map(d => (d.id === restore.id ? restore : d)));
+      }
+      console.error('[meal-builder] updateDish failed:', err);
+      return false;
+    }
+  };
+
+  const removeDish = async (dishId: string): Promise<boolean> => {
+    let removed: Dish | undefined;
+    let removedIndex = -1;
+    setDishes(prev => {
+      removedIndex = prev.findIndex(d => d.id === dishId);
+      removed = prev[removedIndex];
+      return prev.filter(d => d.id !== dishId);
+    });
+    try {
+      const r = await fetch(`${ENDPOINTS.dishes}/${encodeURIComponent(dishId)}`, {
+        method: 'DELETE',
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`DELETE ${ENDPOINTS.dishes}/${dishId} → ${r.status}`);
+      return true;
+    } catch (err) {
+      if (removed && removedIndex >= 0) {
+        const restore = removed;
+        const at = removedIndex;
+        setDishes(prev => {
+          const next = [...prev];
+          next.splice(at, 0, restore);
+          return next;
+        });
+      }
+      console.error('[meal-builder] removeDish failed:', err);
+      return false;
+    }
+  };
+
+  // ---------- Daily meals (per date) ----------
+
+  const setMealsForDate = async (date: string, meals: Meals): Promise<boolean> => {
+    let prev: Meals | undefined;
+    setDailyMeals(curr => {
+      prev = curr[date];
+      return { ...curr, [date]: meals };
+    });
+    try {
+      const r = await fetch(`${ENDPOINTS.dailyMeals}/${encodeURIComponent(date)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(meals),
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`PUT ${ENDPOINTS.dailyMeals}/${date} → ${r.status}`);
+      return true;
+    } catch (err) {
+      const restore = prev;
+      setDailyMeals(curr => {
+        const next = { ...curr };
+        if (restore) next[date] = restore;
+        else delete next[date];
+        return next;
+      });
+      console.error('[meal-builder] setMealsForDate failed:', err);
+      return false;
+    }
+  };
+
+  const deleteMealsForDate = async (date: string): Promise<boolean> => {
+    let prev: Meals | undefined;
+    setDailyMeals(curr => {
+      prev = curr[date];
+      const next = { ...curr };
+      delete next[date];
+      return next;
+    });
+    try {
+      const r = await fetch(`${ENDPOINTS.dailyMeals}/${encodeURIComponent(date)}`, {
+        method: 'DELETE',
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`DELETE ${ENDPOINTS.dailyMeals}/${date} → ${r.status}`);
+      return true;
+    } catch (err) {
+      if (prev) {
+        const restore = prev;
+        setDailyMeals(curr => ({ ...curr, [date]: restore }));
+      }
+      console.error('[meal-builder] deleteMealsForDate failed:', err);
+      return false;
+    }
+  };
+
+  // ---------- Meal presets ----------
+
+  const addMealPreset = async (preset: MealPreset): Promise<boolean> => {
+    setMealPresets(prev => [...prev, preset]);
+    try {
+      const r = await fetch(ENDPOINTS.mealPresets, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(preset),
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`POST ${ENDPOINTS.mealPresets} → ${r.status}`);
+      return true;
+    } catch (err) {
+      setMealPresets(prev => prev.filter(p => p.id !== preset.id));
+      console.error('[meal-builder] addMealPreset failed:', err);
+      return false;
+    }
+  };
+
+  const removeMealPreset = async (presetId: string): Promise<boolean> => {
+    let removed: MealPreset | undefined;
+    let removedIndex = -1;
+    setMealPresets(prev => {
+      removedIndex = prev.findIndex(p => p.id === presetId);
+      removed = prev[removedIndex];
+      return prev.filter(p => p.id !== presetId);
+    });
+    try {
+      const r = await fetch(`${ENDPOINTS.mealPresets}/${encodeURIComponent(presetId)}`, {
+        method: 'DELETE',
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`DELETE ${ENDPOINTS.mealPresets}/${presetId} → ${r.status}`);
+      return true;
+    } catch (err) {
+      if (removed && removedIndex >= 0) {
+        const restore = removed;
+        const at = removedIndex;
+        setMealPresets(prev => {
+          const next = [...prev];
+          next.splice(at, 0, restore);
+          return next;
+        });
+      }
+      console.error('[meal-builder] removeMealPreset failed:', err);
+      return false;
+    }
+  };
+
+  // ---------- Meals-done flags (per date) ----------
+
+  const setMealsDoneForDateHandler = async (
+    date: string,
+    flags: Partial<Record<MealType, boolean>>,
+  ): Promise<boolean> => {
+    let prev: Partial<Record<MealType, boolean>> | undefined;
+    setMealsDone(curr => {
+      prev = curr[date];
+      return { ...curr, [date]: flags };
+    });
+    try {
+      const r = await fetch(`${ENDPOINTS.mealsDone}/${encodeURIComponent(date)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(flags),
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`PUT ${ENDPOINTS.mealsDone}/${date} → ${r.status}`);
+      return true;
+    } catch (err) {
+      const restore = prev;
+      setMealsDone(curr => {
+        const next = { ...curr };
+        if (restore) next[date] = restore;
+        else delete next[date];
+        return next;
+      });
+      console.error('[meal-builder] setMealsDoneForDate failed:', err);
+      return false;
+    }
+  };
+
+  // ---------- Weight log (per date) ----------
+
+  const setWeightForDateHandler = async (date: string, weight: number): Promise<boolean> => {
+    let prev: number | undefined;
+    setWeightLog(curr => {
+      prev = curr[date];
+      return { ...curr, [date]: weight };
+    });
+    try {
+      const r = await fetch(`${ENDPOINTS.weightLog}/${encodeURIComponent(date)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(weight),
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`PUT ${ENDPOINTS.weightLog}/${date} → ${r.status}`);
+      return true;
+    } catch (err) {
+      const restore = prev;
+      setWeightLog(curr => {
+        const next = { ...curr };
+        if (restore !== undefined) next[date] = restore;
+        else delete next[date];
+        return next;
+      });
+      console.error('[meal-builder] setWeightForDate failed:', err);
+      return false;
+    }
+  };
+
+  const deleteWeightForDateHandler = async (date: string): Promise<boolean> => {
+    let prev: number | undefined;
+    setWeightLog(curr => {
+      prev = curr[date];
+      const next = { ...curr };
+      delete next[date];
+      return next;
+    });
+    try {
+      const r = await fetch(`${ENDPOINTS.weightLog}/${encodeURIComponent(date)}`, {
+        method: 'DELETE',
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`DELETE ${ENDPOINTS.weightLog}/${date} → ${r.status}`);
+      return true;
+    } catch (err) {
+      if (prev !== undefined) {
+        const restore = prev;
+        setWeightLog(curr => ({ ...curr, [date]: restore }));
+      }
+      console.error('[meal-builder] deleteWeightForDate failed:', err);
+      return false;
+    }
+  };
+
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     window.location.href = '/login';
@@ -430,25 +703,30 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       value={{
         products,
         dishes,
-        setDishes,
         dailyMeals,
-        setDailyMeals,
         targets,
         setTargets,
         macroTargets,
         setMacroTargets,
         pinnedIds,
         mealsDone,
-        setMealsDone,
         mealPresets,
-        setMealPresets,
         weightLog,
-        setWeightLog,
         addProduct,
         updateProduct,
         removeProduct,
         pinProduct,
         unpinProduct,
+        addDish,
+        updateDish,
+        removeDish,
+        setMealsForDate,
+        deleteMealsForDate,
+        addMealPreset,
+        removeMealPreset,
+        setMealsDoneForDate: setMealsDoneForDateHandler,
+        setWeightForDate: setWeightForDateHandler,
+        deleteWeightForDate: deleteWeightForDateHandler,
         loading,
         logout,
       }}

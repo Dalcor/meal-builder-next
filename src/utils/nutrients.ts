@@ -50,17 +50,18 @@ export function getDishTotalWeight(dish: Dish): number {
   return dish.ingredients.reduce((sum, ing) => sum + ing.grams, 0);
 }
 
-// Resolve nutrients for a meal item: try the live source first, fall
-// back to the item's snapshot. Items added before snapshots existed and
-// whose source is gone return null.
+// Resolve nutrients for a meal item. Snapshot is the source of truth
+// when present — historical meals must not be retroactively rewritten
+// by edits to the source product/dish. The live source is used only
+// for items added before snapshots existed (backfill should have
+// covered most of these on first load post-upgrade).
 export function getMealItemNutrients(
   item: MealItem,
   products: Product[],
   dishes: Dish[],
 ): FoodNutrients | null {
-  const live = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
-  if (live) return live;
-  return item.snapshot ?? null;
+  if (item.snapshot) return item.snapshot;
+  return getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
 }
 
 export function getMealItemUnit(
@@ -68,9 +69,8 @@ export function getMealItemUnit(
   products: Product[],
 ): { gramsPerUnit: number; label?: string } | undefined {
   if (item.sourceType !== 'product') return undefined;
-  const live = products.find(p => p.id === item.sourceId)?.unit;
-  if (live) return live;
-  return item.snapshot?.unit;
+  if (item.snapshot?.unit) return item.snapshot.unit;
+  return products.find(p => p.id === item.sourceId)?.unit;
 }
 
 function round(n: number): number {

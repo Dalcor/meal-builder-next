@@ -10,6 +10,7 @@ import {
   getDishNutrients,
   getDishTotalWeight,
   getMealItemNutrients,
+  getMealItemUnit,
 } from '@/utils/nutrients';
 import ProductForm from '@/components/ProductForm';
 import DraggableProduct from '@/components/DraggableProduct';
@@ -279,10 +280,6 @@ export default function App() {
     if (!item) return;
     const nutrients = getMealItemNutrients(item, products, dishes);
     if (!nutrients) return;
-    const unit =
-      item.sourceType === 'product'
-        ? products.find(p => p.id === item.sourceId)?.unit ?? item.snapshot?.unit
-        : undefined;
     setPortionModal({
       nutrients,
       sourceType: item.sourceType,
@@ -290,7 +287,7 @@ export default function App() {
       mealType,
       editItemId: itemId,
       initialGrams: item.grams,
-      unit,
+      unit: getMealItemUnit(item, products),
     });
   };
 

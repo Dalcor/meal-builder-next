@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { Redis } from '@upstash/redis';
-import type { UserData, UserSliceKey } from '@/types';
+import type { Product, UserData, UserSliceKey } from '@/types';
 import { buildSeedProducts } from '@/data/presets';
 
 // All persistent state lives in Upstash Redis. The same env vars work
@@ -99,7 +99,13 @@ async function ensureSeedUser(): Promise<void> {
   return seedPromise;
 }
 
-// ---------- Slices ----------
+// ---------- Slices (blob — full slice replace) ----------
+//
+// These are JSON blobs that the client mirrors and writes whole. Used for
+// slices where granular mutation isn't worth the complexity yet:
+// dishes, dailyMeals, targets, macroTargets, mealsDone, mealPresets,
+// weightLog. Multi-tab clobbering is possible here — see the note in
+// docs/code-review.md §11.
 
 export async function readSlice<K extends UserSliceKey>(
   userId: string,
@@ -115,6 +121,99 @@ export async function writeSlice<K extends UserSliceKey>(
   value: UserData[K],
 ): Promise<void> {
   await kv().set(sliceKey(userId, key), value);
+}
+
+// ---------- Products (Redis HASH — granular per-product CRUD) ----------
+//
+// Stored as `mb:user:{userId}:products:items` (HASH). Field = product id,
+// value = full Product as JSON. Multi-tab safe: HSET only touches the
+// specified field, HDEL only removes the specified field.
+
+function productsHashKey(userId: string): string {
+  return `mb:user:${userId}:products:items`;
+}
+
+function legacyProductsKey(userId: string): string {
+  return `mb:user:${userId}:products`;
+}
+
+// Migrate the user's products from the old blob layout to a HASH.
+// Idempotent — once the legacy key is gone, this is a no-op.
+async function migrateProductsToHash(userId: string): Promise<void> {
+  const legacy = await kv().get<Product[]>(legacyProductsKey(userId));
+  if (!legacy || !Array.isArray(legacy) || legacy.length === 0) {
+    // Nothing to migrate; ensure legacy key is cleared so we don't re-check.
+    if (legacy !== null) {
+      await kv().del(legacyProductsKey(userId));
+    }
+    return;
+  }
+  const fields: Record<string, Product> = {};
+  for (const p of legacy) {
+    if (p && typeof p.id === 'string') fields[p.id] = p;
+  }
+  if (Object.keys(fields).length > 0) {
+    await kv().hset(productsHashKey(userId), fields);
+  }
+  await kv().del(legacyProductsKey(userId));
+}
+
+export async function listProducts(userId: string): Promise<Product[]> {
+  await migrateProductsToHash(userId);
+  const obj = await kv().hgetall<Record<string, Product>>(productsHashKey(userId));
+  if (!obj) return [];
+  return Object.values(obj);
+}
+
+export async function setProduct(userId: string, product: Product): Promise<void> {
+  await migrateProductsToHash(userId);
+  await kv().hset(productsHashKey(userId), { [product.id]: product });
+}
+
+export async function deleteProduct(userId: string, productId: string): Promise<void> {
+  await migrateProductsToHash(userId);
+  await kv().hdel(productsHashKey(userId), productId);
+}
+
+// ---------- Pinned IDs (Redis SET — granular pin / unpin) ----------
+//
+// Stored as `mb:user:{userId}:pinnedIds:set`. SADD to pin, SREM to unpin.
+// Multi-tab safe: each operation is atomic and only affects one element.
+
+function pinnedSetKey(userId: string): string {
+  return `mb:user:${userId}:pinnedIds:set`;
+}
+
+function legacyPinnedKey(userId: string): string {
+  return `mb:user:${userId}:pinnedIds`;
+}
+
+async function migratePinnedToSet(userId: string): Promise<void> {
+  const legacy = await kv().get<string[]>(legacyPinnedKey(userId));
+  if (!legacy || !Array.isArray(legacy) || legacy.length === 0) {
+    if (legacy !== null) await kv().del(legacyPinnedKey(userId));
+    return;
+  }
+  const valid = legacy.filter((s): s is string => typeof s === 'string');
+  if (valid.length > 0) {
+    await kv().sadd(pinnedSetKey(userId), valid[0], ...valid.slice(1));
+  }
+  await kv().del(legacyPinnedKey(userId));
+}
+
+export async function listPinned(userId: string): Promise<string[]> {
+  await migratePinnedToSet(userId);
+  return kv().smembers(pinnedSetKey(userId));
+}
+
+export async function addPin(userId: string, productId: string): Promise<void> {
+  await migratePinnedToSet(userId);
+  await kv().sadd(pinnedSetKey(userId), productId);
+}
+
+export async function removePin(userId: string, productId: string): Promise<void> {
+  await migratePinnedToSet(userId);
+  await kv().srem(pinnedSetKey(userId), productId);
 }
 
 // ---------- Users ----------
@@ -148,8 +247,14 @@ export async function createUser(
   await kv().set(userKey(newUser.id), newUser);
   await kv().set(emailKey(email), newUser.id);
   // Seed the new user's product catalog with the default presets, so they
-  // start with a usable list instead of an empty sidebar.
-  await writeSlice(newUser.id, 'products', buildSeedProducts());
+  // start with a usable list instead of an empty sidebar. Stored directly
+  // in the HASH layout (no migration needed).
+  const seedProducts = buildSeedProducts();
+  if (seedProducts.length > 0) {
+    const fields: Record<string, Product> = {};
+    for (const p of seedProducts) fields[p.id] = p;
+    await kv().hset(productsHashKey(newUser.id), fields);
+  }
   return newUser;
 }
 

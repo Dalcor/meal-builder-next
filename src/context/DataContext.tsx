@@ -15,15 +15,20 @@ import type {
 import { getSourceNutrients } from '@/utils/nutrients';
 
 interface DataContextValue extends UserData {
-  setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
   setDishes: React.Dispatch<React.SetStateAction<Dish[]>>;
   setDailyMeals: React.Dispatch<React.SetStateAction<Record<string, Meals>>>;
   setTargets: React.Dispatch<React.SetStateAction<MealTargets>>;
   setMacroTargets: React.Dispatch<React.SetStateAction<MacroTargets>>;
-  setPinnedIds: React.Dispatch<React.SetStateAction<string[]>>;
   setMealsDone: React.Dispatch<React.SetStateAction<Record<string, Partial<Record<MealType, boolean>>>>>;
   setMealPresets: React.Dispatch<React.SetStateAction<MealPreset[]>>;
   setWeightLog: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  // Granular ops for products + pinned: each call hits a per-id endpoint,
+  // so two tabs editing different items don't clobber each other.
+  addProduct: (product: Product) => Promise<boolean>;
+  updateProduct: (product: Product) => Promise<boolean>;
+  removeProduct: (productId: string) => Promise<boolean>;
+  pinProduct: (productId: string) => Promise<boolean>;
+  unpinProduct: (productId: string) => Promise<boolean>;
   loading: boolean;
   logout: () => Promise<void>;
 }
@@ -294,15 +299,126 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // so a tiny debounce is enough to coalesce React's batched re-renders.
   // The two `*Targets` slices are bound to <input type="number"> fields
   // that update on every keystroke, so they need real batching.
-  useDebouncedSliceSave('products', ENDPOINTS.products, products, ready, baselines, 50);
+  // `products` and `pinnedIds` are NOT debounced here — they go through
+  // the granular helpers below (addProduct, pinProduct, etc.) so two
+  // tabs can mutate different items without clobbering each other.
   useDebouncedSliceSave('dishes', ENDPOINTS.dishes, dishes, ready, baselines, 50);
   useDebouncedSliceSave('dailyMeals', ENDPOINTS.dailyMeals, dailyMeals, ready, baselines, 50);
   useDebouncedSliceSave('targets', ENDPOINTS.targets, targets, ready, baselines, 400);
   useDebouncedSliceSave('macroTargets', ENDPOINTS.macroTargets, macroTargets, ready, baselines, 400);
-  useDebouncedSliceSave('pinnedIds', ENDPOINTS.pinnedIds, pinnedIds, ready, baselines, 50);
   useDebouncedSliceSave('mealsDone', ENDPOINTS.mealsDone, mealsDone, ready, baselines, 50);
   useDebouncedSliceSave('mealPresets', ENDPOINTS.mealPresets, mealPresets, ready, baselines, 50);
   useDebouncedSliceSave('weightLog', ENDPOINTS.weightLog, weightLog, ready, baselines, 50);
+
+  // ---------- Granular mutators for products + pinned ----------
+  // These optimistically update local state, then fire the granular
+  // request. On failure, revert and surface a console.error so the
+  // problem is debuggable.
+
+  const addProduct = async (product: Product): Promise<boolean> => {
+    setProducts(prev => [...prev, product]);
+    try {
+      const r = await fetch(ENDPOINTS.products, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(product),
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`POST ${ENDPOINTS.products} → ${r.status}`);
+      return true;
+    } catch (err) {
+      setProducts(prev => prev.filter(p => p.id !== product.id));
+      console.error('[meal-builder] addProduct failed:', err);
+      return false;
+    }
+  };
+
+  const updateProduct = async (product: Product): Promise<boolean> => {
+    let prevProduct: Product | undefined;
+    setProducts(prev => {
+      prevProduct = prev.find(p => p.id === product.id);
+      return prev.map(p => (p.id === product.id ? product : p));
+    });
+    try {
+      const r = await fetch(`${ENDPOINTS.products}/${encodeURIComponent(product.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(product),
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`PUT ${ENDPOINTS.products}/${product.id} → ${r.status}`);
+      return true;
+    } catch (err) {
+      if (prevProduct) {
+        const revert = prevProduct;
+        setProducts(prev => prev.map(p => (p.id === revert.id ? revert : p)));
+      }
+      console.error('[meal-builder] updateProduct failed:', err);
+      return false;
+    }
+  };
+
+  const removeProduct = async (productId: string): Promise<boolean> => {
+    let removed: Product | undefined;
+    let removedIndex = -1;
+    setProducts(prev => {
+      removedIndex = prev.findIndex(p => p.id === productId);
+      removed = prev[removedIndex];
+      return prev.filter(p => p.id !== productId);
+    });
+    try {
+      const r = await fetch(`${ENDPOINTS.products}/${encodeURIComponent(productId)}`, {
+        method: 'DELETE',
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`DELETE ${ENDPOINTS.products}/${productId} → ${r.status}`);
+      return true;
+    } catch (err) {
+      if (removed && removedIndex >= 0) {
+        const restore = removed;
+        const at = removedIndex;
+        setProducts(prev => {
+          const next = [...prev];
+          next.splice(at, 0, restore);
+          return next;
+        });
+      }
+      console.error('[meal-builder] removeProduct failed:', err);
+      return false;
+    }
+  };
+
+  const pinProduct = async (productId: string): Promise<boolean> => {
+    setPinnedIds(prev => (prev.includes(productId) ? prev : [...prev, productId]));
+    try {
+      const r = await fetch(`${ENDPOINTS.pinnedIds}/${encodeURIComponent(productId)}`, {
+        method: 'PUT',
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`PUT ${ENDPOINTS.pinnedIds}/${productId} → ${r.status}`);
+      return true;
+    } catch (err) {
+      setPinnedIds(prev => prev.filter(x => x !== productId));
+      console.error('[meal-builder] pinProduct failed:', err);
+      return false;
+    }
+  };
+
+  const unpinProduct = async (productId: string): Promise<boolean> => {
+    setPinnedIds(prev => prev.filter(x => x !== productId));
+    try {
+      const r = await fetch(`${ENDPOINTS.pinnedIds}/${encodeURIComponent(productId)}`, {
+        method: 'DELETE',
+        keepalive: true,
+      });
+      if (!r.ok) throw new Error(`DELETE ${ENDPOINTS.pinnedIds}/${productId} → ${r.status}`);
+      return true;
+    } catch (err) {
+      setPinnedIds(prev => (prev.includes(productId) ? prev : [...prev, productId]));
+      console.error('[meal-builder] unpinProduct failed:', err);
+      return false;
+    }
+  };
 
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -313,7 +429,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     <DataContext.Provider
       value={{
         products,
-        setProducts,
         dishes,
         setDishes,
         dailyMeals,
@@ -323,13 +438,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         macroTargets,
         setMacroTargets,
         pinnedIds,
-        setPinnedIds,
         mealsDone,
         setMealsDone,
         mealPresets,
         setMealPresets,
         weightLog,
         setWeightLog,
+        addProduct,
+        updateProduct,
+        removeProduct,
+        pinProduct,
+        unpinProduct,
         loading,
         logout,
       }}

@@ -72,9 +72,10 @@ type LeftTab = 'products' | 'dishes';
 
 export default function App() {
   const {
-    products, setProducts, dishes, setDishes, dailyMeals, setDailyMeals,
-    targets, setTargets, macroTargets, setMacroTargets, pinnedIds, setPinnedIds,
+    products, dishes, setDishes, dailyMeals, setDailyMeals,
+    targets, setTargets, macroTargets, setMacroTargets, pinnedIds,
     mealsDone, setMealsDone, mealPresets, setMealPresets, weightLog, setWeightLog,
+    addProduct, updateProduct, removeProduct, pinProduct, unpinProduct,
     loading, logout,
   } = useUserData();
 
@@ -128,24 +129,24 @@ export default function App() {
 
   // --- Products ---
   const handleAddProduct = (data: Omit<Product, 'id'>) => {
-    setProducts(prev => [...prev, { ...data, id: generateId() }]);
+    const product: Product = { id: generateId(), ...data };
+    addProduct(product);
     setShowAddForm(false);
   };
 
   const handleEditProduct = (data: Omit<Product, 'id'>) => {
     if (!editingProduct) return;
-    // Replace the product entirely — using `{ ...p, ...data }` here would
-    // leak old optional fields (e.g. `unit` when the user unchecked
-    // "Зберігати в штуках"), because the form omits absent keys instead
-    // of setting them to undefined.
-    setProducts(prev =>
-      prev.map(p => (p.id === editingProduct.id ? { id: p.id, ...data } : p))
-    );
+    // Replace the product entirely — `{ ...p, ...data }` would leak old
+    // optional fields (e.g. `unit` when the user unchecked the "штуках"
+    // checkbox), because the form omits absent keys instead of setting
+    // them to undefined.
+    const product: Product = { id: editingProduct.id, ...data };
+    updateProduct(product);
     setEditingProduct(null);
   };
 
   const handleDeleteProduct = (id: string) => {
-    setProducts(prev => prev.filter(p => p.id !== id));
+    removeProduct(id);
     // Past meal items keep their snapshot, so they stay visible in
     // historical days even though the product is gone from the catalog.
   };
@@ -467,30 +468,34 @@ export default function App() {
   }, [products]);
 
   const togglePin = (id: string) => {
-    setPinnedIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
+    if (pinnedIds.includes(id)) {
+      unpinProduct(id);
+    } else {
+      pinProduct(id);
+    }
   };
 
   const handleRenameCategory = (oldName: string, newName: string) => {
     const trimmed = newName.trim();
     if (!trimmed || trimmed === oldName) return;
-    setProducts(prev =>
-      prev.map(p =>
-        p.category === oldName ? { ...p, category: trimmed } : p,
-      ),
-    );
+    // Iterate per affected product so each PUT is granular and
+    // multi-tab-safe. Sequential to keep the order stable; for ~120
+    // products this is fast enough.
+    for (const p of products) {
+      if (p.category === oldName) {
+        updateProduct({ ...p, category: trimmed });
+      }
+    }
   };
 
   const handleClearCategory = (name: string) => {
-    setProducts(prev =>
-      prev.map(p => {
-        if (p.category !== name) return p;
+    for (const p of products) {
+      if (p.category === name) {
         const next = { ...p };
         delete next.category;
-        return next;
-      }),
-    );
+        updateProduct(next);
+      }
+    }
   };
 
   const activeNutrients =

@@ -5,7 +5,12 @@ import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import type { Product, Dish, DishIngredient, MealItem, MealType, Meals, FoodNutrients, MealPreset } from '@/types';
 import { useUserData } from '@/context/DataContext';
-import { getSourceNutrients, getDishNutrients, getDishTotalWeight } from '@/utils/nutrients';
+import {
+  getSourceNutrients,
+  getDishNutrients,
+  getDishTotalWeight,
+  getMealItemNutrients,
+} from '@/utils/nutrients';
 import ProductForm from '@/components/ProductForm';
 import DraggableProduct from '@/components/DraggableProduct';
 import MealZone from '@/components/MealZone';
@@ -134,22 +139,8 @@ export default function App() {
 
   const handleDeleteProduct = (id: string) => {
     setProducts(prev => prev.filter(p => p.id !== id));
-    // Remove from all days
-    setDailyMeals(prev => {
-      const next = { ...prev };
-      for (const dateKey of Object.keys(next)) {
-        const day = next[dateKey];
-        const filter = (items: MealItem[]) =>
-          items.filter(i => !(i.sourceType === 'product' && i.sourceId === id));
-        next[dateKey] = {
-          breakfast: filter(day.breakfast),
-          lunch: filter(day.lunch),
-          dinner: filter(day.dinner),
-          snacks: filter(day.snacks),
-        };
-      }
-      return next;
-    });
+    // Past meal items keep their snapshot, so they stay visible in
+    // historical days even though the product is gone from the catalog.
   };
 
   // --- Dishes ---
@@ -167,27 +158,24 @@ export default function App() {
 
   const handleDeleteDish = (id: string) => {
     setDishes(prev => prev.filter(d => d.id !== id));
-    setDailyMeals(prev => {
-      const next = { ...prev };
-      for (const dateKey of Object.keys(next)) {
-        const day = next[dateKey];
-        const filter = (items: MealItem[]) =>
-          items.filter(i => !(i.sourceType === 'dish' && i.sourceId === id));
-        next[dateKey] = {
-          breakfast: filter(day.breakfast),
-          lunch: filter(day.lunch),
-          dinner: filter(day.dinner),
-          snacks: filter(day.snacks),
-        };
-      }
-      return next;
-    });
+    // Past meal items keep their snapshot, so historical days still
+    // show the dish that was eaten with the original ingredient list.
   };
 
   // --- Drag & Drop ---
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
     setActiveSourceType(event.active.data.current?.sourceType ?? 'product');
+  };
+
+  const buildSnapshot = (
+    sourceType: 'product' | 'dish',
+    sourceId: string,
+    nutrients: FoodNutrients,
+  ) => {
+    if (sourceType !== 'product') return nutrients;
+    const unit = products.find(p => p.id === sourceId)?.unit;
+    return unit ? { ...nutrients, unit } : nutrients;
   };
 
   const startAddingToMeal = (
@@ -202,7 +190,13 @@ export default function App() {
       const dish = dishes.find(d => d.id === sourceId);
       if (dish?.fixedPortion) {
         const totalWeight = getDishTotalWeight(dish);
-        const newItem: MealItem = { id: generateId(), sourceType, sourceId, grams: totalWeight };
+        const newItem: MealItem = {
+          id: generateId(),
+          sourceType,
+          sourceId,
+          grams: totalWeight,
+          snapshot: buildSnapshot(sourceType, sourceId, nutrients),
+        };
         setMeals(prev => ({ ...prev, [mealType]: [...prev[mealType], newItem] }));
         return;
       }
@@ -218,6 +212,7 @@ export default function App() {
         sourceType,
         sourceId,
         grams: product.unit.gramsPerUnit,
+        snapshot: buildSnapshot(sourceType, sourceId, nutrients),
       };
       setMeals(prev => ({ ...prev, [mealType]: [...prev[mealType], newItem] }));
       return;
@@ -250,7 +245,7 @@ export default function App() {
   // --- Meal items ---
   const handlePortionConfirm = (grams: number) => {
     if (!portionModal) return;
-    const { mealType, editItemId, sourceType, sourceId } = portionModal;
+    const { mealType, editItemId, sourceType, sourceId, nutrients } = portionModal;
 
     if (editItemId) {
       setMeals(prev => ({
@@ -265,6 +260,7 @@ export default function App() {
         sourceType,
         sourceId,
         grams,
+        snapshot: buildSnapshot(sourceType, sourceId, nutrients),
       };
       setMeals(prev => ({
         ...prev,
@@ -277,11 +273,11 @@ export default function App() {
   const handleEditMealItem = (mealType: MealType, itemId: string) => {
     const item = meals[mealType].find(i => i.id === itemId);
     if (!item) return;
-    const nutrients = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+    const nutrients = getMealItemNutrients(item, products, dishes);
     if (!nutrients) return;
     const unit =
       item.sourceType === 'product'
-        ? products.find(p => p.id === item.sourceId)?.unit
+        ? products.find(p => p.id === item.sourceId)?.unit ?? item.snapshot?.unit
         : undefined;
     setPortionModal({
       nutrients,
@@ -297,18 +293,27 @@ export default function App() {
   const handleReplaceMealItem = (mealType: MealType, itemId: string) => {
     const item = meals[mealType].find(i => i.id === itemId);
     if (!item) return;
-    const nutrients = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+    const nutrients = getMealItemNutrients(item, products, dishes);
     if (!nutrients) return;
     setReplaceModal({ mealType, item, nutrients });
   };
 
   const handleConfirmReplace = (sourceType: 'product' | 'dish', sourceId: string, grams: number) => {
     if (!replaceModal) return;
+    const newNutrients = getSourceNutrients(sourceType, sourceId, products, dishes);
     setMeals(prev => ({
       ...prev,
       [replaceModal.mealType]: prev[replaceModal.mealType].map(item =>
         item.id === replaceModal.item.id
-          ? { ...item, sourceType, sourceId, grams }
+          ? {
+              ...item,
+              sourceType,
+              sourceId,
+              grams,
+              snapshot: newNutrients
+                ? buildSnapshot(sourceType, sourceId, newNutrients)
+                : item.snapshot,
+            }
           : item
       ),
     }));
@@ -372,7 +377,7 @@ export default function App() {
       .flat()
       .reduce(
         (acc, item) => {
-          const n = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+          const n = getMealItemNutrients(item, products, dishes);
           if (!n) return acc;
           const ratio = item.grams / 100;
           return {

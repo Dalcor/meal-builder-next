@@ -8,9 +8,11 @@ import type {
   MealTargets,
   MacroTargets,
   MealType,
+  MealItem,
   MealPreset,
   UserData,
 } from '@/types';
+import { getSourceNutrients } from '@/utils/nutrients';
 
 interface DataContextValue extends UserData {
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
@@ -51,6 +53,61 @@ const ENDPOINTS: Record<keyof UserData, string> = {
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
+
+// One-time enrichment of historical meal items with a snapshot of their
+// source nutrition. After this runs, deleting / editing a product or dish
+// will not affect items that were added before the change.
+function backfillSnapshots(
+  daily: Record<string, Meals>,
+  presets: MealPreset[],
+  products: Product[],
+  dishes: Dish[],
+): {
+  meals: Record<string, Meals>;
+  presets: MealPreset[];
+  changed: { meals: boolean; presets: boolean };
+} {
+  let mealsTouched = false;
+  let presetsTouched = false;
+
+  const enrichItem = (item: MealItem, mark: () => void): MealItem => {
+    if (item.snapshot) return item;
+    const live = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+    if (!live) return item;
+    mark();
+    if (item.sourceType === 'product') {
+      const unit = products.find(p => p.id === item.sourceId)?.unit;
+      return { ...item, snapshot: unit ? { ...live, unit } : live };
+    }
+    return { ...item, snapshot: live };
+  };
+
+  const markMeals = () => {
+    mealsTouched = true;
+  };
+  const markPresets = () => {
+    presetsTouched = true;
+  };
+
+  const enrichedDaily: Record<string, Meals> = {};
+  for (const [date, dayMeals] of Object.entries(daily)) {
+    enrichedDaily[date] = {
+      breakfast: dayMeals.breakfast.map(i => enrichItem(i, markMeals)),
+      lunch: dayMeals.lunch.map(i => enrichItem(i, markMeals)),
+      dinner: dayMeals.dinner.map(i => enrichItem(i, markMeals)),
+      snacks: dayMeals.snacks.map(i => enrichItem(i, markMeals)),
+    };
+  }
+  const enrichedPresets = presets.map(p => ({
+    ...p,
+    items: p.items.map(i => enrichItem(i, markPresets)),
+  }));
+  return {
+    meals: enrichedDaily,
+    presets: enrichedPresets,
+    changed: { meals: mealsTouched, presets: presetsTouched },
+  };
+}
 
 function useDebouncedSave<T>(
   endpoint: string,
@@ -114,19 +171,41 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       weightLog,
     ]) => {
       if (cancelled) return;
-      setProducts(products ?? DEFAULTS.products);
-      setDishes(dishes ?? DEFAULTS.dishes);
-      setDailyMeals(dailyMeals ?? DEFAULTS.dailyMeals);
+      const safeProducts = products ?? DEFAULTS.products;
+      const safeDishes = dishes ?? DEFAULTS.dishes;
+      const rawMeals = dailyMeals ?? DEFAULTS.dailyMeals;
+      const rawPresets = mealPresets ?? DEFAULTS.mealPresets;
+      const { meals: enrichedMeals, presets: enrichedPresets, changed } =
+        backfillSnapshots(rawMeals, rawPresets, safeProducts, safeDishes);
+      setProducts(safeProducts);
+      setDishes(safeDishes);
+      setDailyMeals(enrichedMeals);
       setTargets(targets ?? DEFAULTS.targets);
       setMacroTargets(macroTargets ?? DEFAULTS.macroTargets);
       setPinnedIds(pinnedIds ?? DEFAULTS.pinnedIds);
       setMealsDone(mealsDone ?? DEFAULTS.mealsDone);
-      setMealPresets(mealPresets ?? DEFAULTS.mealPresets);
+      setMealPresets(enrichedPresets);
       setWeightLog(weightLog ?? DEFAULTS.weightLog);
       setLoading(false);
-      // Allow initial render to settle before enabling auto-save.
       setTimeout(() => {
         initialized.current = true;
+        // useDebouncedSave's effects already fired with initialized=false
+        // for the enriched values, so they skipped. Persist the backfill
+        // explicitly here, once, only if it actually changed something.
+        if (changed.meals) {
+          fetch(ENDPOINTS.dailyMeals, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(enrichedMeals),
+          }).catch(() => {});
+        }
+        if (changed.presets) {
+          fetch(ENDPOINTS.mealPresets, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(enrichedPresets),
+          }).catch(() => {});
+        }
       }, 100);
     });
 

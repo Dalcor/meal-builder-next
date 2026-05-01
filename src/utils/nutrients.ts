@@ -1,4 +1,4 @@
-import type { Product, Dish, FoodNutrients } from '../types';
+import type { Product, Dish, FoodNutrients, MealItem } from '../types';
 
 export function getDishNutrients(dish: Dish, products: Product[]): FoodNutrients {
   let totalWeight = 0;
@@ -48,6 +48,29 @@ export function getSourceNutrients(
 
 export function getDishTotalWeight(dish: Dish): number {
   return dish.ingredients.reduce((sum, ing) => sum + ing.grams, 0);
+}
+
+// Resolve nutrients for a meal item: try the live source first, fall
+// back to the item's snapshot. Items added before snapshots existed and
+// whose source is gone return null.
+export function getMealItemNutrients(
+  item: MealItem,
+  products: Product[],
+  dishes: Dish[],
+): FoodNutrients | null {
+  const live = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+  if (live) return live;
+  return item.snapshot ?? null;
+}
+
+export function getMealItemUnit(
+  item: MealItem,
+  products: Product[],
+): { gramsPerUnit: number; label?: string } | undefined {
+  if (item.sourceType !== 'product') return undefined;
+  const live = products.find(p => p.id === item.sourceId)?.unit;
+  if (live) return live;
+  return item.snapshot?.unit;
 }
 
 function round(n: number): number {

@@ -1,5 +1,5 @@
 import type { MealPreset, Product, Dish } from '../types';
-import { getSourceNutrients } from '../utils/nutrients';
+import { getMealItemNutrients } from '../utils/nutrients';
 
 interface Props {
   presets: MealPreset[];
@@ -28,11 +28,11 @@ export default function CopyMealModal({ presets, products, dishes, onPaste, onDe
             <div className="space-y-2">
               {presets.map(preset => {
                 const totalCal = preset.items.reduce((sum, item) => {
-                  const n = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+                  const n = getMealItemNutrients(item, products, dishes);
                   return sum + (n ? (n.calories * item.grams) / 100 : 0);
                 }, 0);
                 const totalProt = preset.items.reduce((sum, item) => {
-                  const n = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+                  const n = getMealItemNutrients(item, products, dishes);
                   return sum + (n ? (n.protein * item.grams) / 100 : 0);
                 }, 0);
 
@@ -52,7 +52,7 @@ export default function CopyMealModal({ presets, products, dishes, onPaste, onDe
 
                     <div className="text-xs text-gray-500 mb-2">
                       {preset.items.map(item => {
-                        const n = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+                        const n = getMealItemNutrients(item, products, dishes);
                         return n ? `${n.name} (${item.grams}г)` : null;
                       }).filter(Boolean).join(', ')}
                     </div>

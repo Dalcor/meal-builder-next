@@ -72,12 +72,33 @@ export function isDishArray(v: unknown): v is Dish[] {
 
 function isMealItem(v: unknown): v is MealItem {
   if (!isObj(v)) return false;
-  return (
-    isStr(v.id) &&
-    (v.sourceType === 'product' || v.sourceType === 'dish') &&
-    isStr(v.sourceId) &&
-    isNum(v.grams)
-  );
+  if (
+    !isStr(v.id) ||
+    !(v.sourceType === 'product' || v.sourceType === 'dish') ||
+    !isStr(v.sourceId) ||
+    !isNum(v.grams)
+  ) {
+    return false;
+  }
+  if (v.snapshot !== undefined) {
+    if (!isObj(v.snapshot)) return false;
+    const s = v.snapshot as Record<string, unknown>;
+    if (
+      !isStr(s.name) ||
+      !isNum(s.calories) ||
+      !isNum(s.protein) ||
+      !isNum(s.fat) ||
+      !isNum(s.carbs)
+    ) {
+      return false;
+    }
+    if (s.unit !== undefined) {
+      if (!isObj(s.unit)) return false;
+      if (!isNum(s.unit.gramsPerUnit) || s.unit.gramsPerUnit <= 0) return false;
+      if (s.unit.label !== undefined && !isStr(s.unit.label)) return false;
+    }
+  }
+  return true;
 }
 
 function isMeals(v: unknown): v is Meals {

@@ -1,5 +1,5 @@
 import type { MealType, Meals, MealTargets, MacroTargets, Product, Dish } from '../types';
-import { getSourceNutrients } from './nutrients';
+import { getMealItemNutrients } from './nutrients';
 
 const MEAL_LABELS: Record<MealType, string> = {
   breakfast: 'Сніданок',
@@ -37,7 +37,7 @@ export function exportDayToPdf(
   const dayTotals = { calories: 0, protein: 0, fat: 0, carbs: 0 };
   for (const items of Object.values(meals)) {
     for (const item of items) {
-      const n = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+      const n = getMealItemNutrients(item, products, dishes);
       if (!n) continue;
       const r = item.grams / 100;
       dayTotals.calories += n.calories * r;
@@ -60,7 +60,7 @@ export function exportDayToPdf(
     let rowsHtml = '';
 
     for (const item of items) {
-      const n = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+      const n = getMealItemNutrients(item, products, dishes);
       if (!n) continue;
       const r = item.grams / 100;
       const cal = n.calories * r;

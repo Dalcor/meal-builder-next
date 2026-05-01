@@ -1,6 +1,6 @@
 import { useDroppable } from '@dnd-kit/core';
 import type { Product, Dish, MealItem, MealType, FoodNutrients } from '../types';
-import { getSourceNutrients } from '../utils/nutrients';
+import { getMealItemNutrients, getMealItemUnit } from '../utils/nutrients';
 
 interface Props {
   type: MealType;
@@ -55,7 +55,7 @@ export default function MealZone({
   const colors = MEAL_COLORS[type];
 
   const getNutrients = (item: MealItem): FoodNutrients | null =>
-    getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+    getMealItemNutrients(item, products, dishes);
 
   const totals = items.reduce(
     (acc, item) => {
@@ -160,11 +160,7 @@ export default function MealZone({
               const n = getNutrients(item);
               if (!n) return null;
               const ratio = item.grams / 100;
-              const product =
-                item.sourceType === 'product'
-                  ? products.find(p => p.id === item.sourceId)
-                  : undefined;
-              const unit = product?.unit;
+              const unit = getMealItemUnit(item, products);
               return (
                 <div
                   key={item.id}

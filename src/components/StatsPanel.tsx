@@ -10,7 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import type { Meals, MealType, Product, Dish } from '../types';
-import { getSourceNutrients } from '../utils/nutrients';
+import { getMealItemNutrients } from '../utils/nutrients';
 
 interface Props {
   weightLog: Record<string, number>;
@@ -137,7 +137,7 @@ export default function StatsPanel({
           if (!done?.[type]) continue;
           hasAny = true;
           for (const item of meals[type] ?? []) {
-            const n = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
+            const n = getMealItemNutrients(item, products, dishes);
             if (n) total += (n.calories * item.grams) / 100;
           }
         }

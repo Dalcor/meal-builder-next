@@ -37,11 +37,19 @@ export interface FoodNutrients {
   carbs: number;
 }
 
+export interface MealItemSnapshot extends FoodNutrients {
+  unit?: ProductUnit;
+}
+
 export interface MealItem {
   id: string;
   sourceType: 'product' | 'dish';
   sourceId: string;
   grams: number;
+  // Frozen copy of the source nutrition at the moment this item was added.
+  // Used as a fallback if the source product/dish is later deleted or
+  // edited, so historical meals show what was actually eaten.
+  snapshot?: MealItemSnapshot;
 }
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snacks';

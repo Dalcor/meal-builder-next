@@ -15,6 +15,9 @@ export interface Product {
   unit?: ProductUnit;
   // Only meaningful with `unit`: drag-and-drop adds 1 unit without prompting.
   fixedPortion?: boolean;
+  // Optional category for grouping in the sidebar. Free-form string;
+  // suggestions come from `presetCategories` and the user's existing values.
+  category?: string;
 }
 
 export interface DishIngredient {

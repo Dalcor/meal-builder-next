@@ -46,6 +46,7 @@ function isProduct(v: unknown): v is Product {
     if (v.unit.label !== undefined && !isStr(v.unit.label)) return false;
   }
   if (v.fixedPortion !== undefined && !isBool(v.fixedPortion)) return false;
+  if (v.category !== undefined && !isStr(v.category)) return false;
   return true;
 }
 

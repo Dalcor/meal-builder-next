@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { Redis } from '@upstash/redis';
 import type { UserData, UserSliceKey } from '@/types';
+import { buildSeedProducts } from '@/data/presets';
 
 // All persistent state lives in Upstash Redis. The same env vars work
 // locally (drop them into .env.local) and on Vercel (auto-injected by the
@@ -146,6 +147,9 @@ export async function createUser(
   };
   await kv().set(userKey(newUser.id), newUser);
   await kv().set(emailKey(email), newUser.id);
+  // Seed the new user's product catalog with the default presets, so they
+  // start with a usable list instead of an empty sidebar.
+  await writeSlice(newUser.id, 'products', buildSeedProducts());
   return newUser;
 }
 

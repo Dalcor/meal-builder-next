@@ -16,7 +16,6 @@ import ProductForm from '@/components/ProductForm';
 import DraggableProduct from '@/components/DraggableProduct';
 import MealZone from '@/components/MealZone';
 import PortionModal from '@/components/PortionModal';
-import ProductCatalog from '@/components/ProductCatalog';
 import DishConstructor from '@/components/DishConstructor';
 import CopyMealModal from '@/components/CopyMealModal';
 import { exportDayToPdf } from '@/utils/exportPdf';
@@ -24,6 +23,8 @@ import PromptModal from '@/components/PromptModal';
 import ReplaceItemModal from '@/components/ReplaceItemModal';
 import StatsPanel from '@/components/StatsPanel';
 import AddItemModal from '@/components/AddItemModal';
+import CategoriesModal from '@/components/CategoriesModal';
+import { presetCategories } from '@/data/presets';
 
 const MEAL_TYPES: { type: MealType; label: string }[] = [
   { type: 'breakfast', label: 'Сніданок' },
@@ -107,6 +108,7 @@ export default function App() {
   const [showStats, setShowStats] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [addItemFor, setAddItemFor] = useState<{ mealType: MealType; mealLabel: string } | null>(null);
+  const [showCategoriesModal, setShowCategoriesModal] = useState(false);
 
   const [portionModal, setPortionModal] = useState<{
     nutrients: FoodNutrients;
@@ -411,9 +413,83 @@ export default function App() {
     });
   }, [products, pinnedIds, productSearch]);
 
+  // --- Group products by category for the sidebar ---
+  type ProductGroup = { name: string; items: Product[] };
+  const NO_CATEGORY = 'Без категорії';
+  const PINNED_GROUP = 'Закріплені';
+
+  const productGroups = useMemo<ProductGroup[]>(() => {
+    if (productSearch.trim()) {
+      // While searching, ignore grouping — show a flat result list.
+      return [{ name: 'Результати', items: sortedProducts }];
+    }
+    const pinned = sortedProducts.filter(p => pinnedIds.includes(p.id));
+    const rest = sortedProducts.filter(p => !pinnedIds.includes(p.id));
+    const byCat = new Map<string, Product[]>();
+    for (const p of rest) {
+      const cat = p.category?.trim() || NO_CATEGORY;
+      const arr = byCat.get(cat);
+      if (arr) arr.push(p);
+      else byCat.set(cat, [p]);
+    }
+    const result: ProductGroup[] = [];
+    if (pinned.length > 0) result.push({ name: PINNED_GROUP, items: pinned });
+    const sortedKeys = [...byCat.keys()].sort((a, b) => {
+      if (a === NO_CATEGORY) return 1;
+      if (b === NO_CATEGORY) return -1;
+      return a.localeCompare(b, 'uk');
+    });
+    for (const k of sortedKeys) {
+      result.push({ name: k, items: byCat.get(k)! });
+    }
+    return result;
+  }, [sortedProducts, pinnedIds, productSearch]);
+
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleCategoryCollapsed = (name: string) => {
+    setCollapsedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const categorySuggestions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const c of presetCategories) set.add(c.name);
+    for (const p of products) {
+      if (p.category) set.add(p.category);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'uk'));
+  }, [products]);
+
   const togglePin = (id: string) => {
     setPinnedIds(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleRenameCategory = (oldName: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) return;
+    setProducts(prev =>
+      prev.map(p =>
+        p.category === oldName ? { ...p, category: trimmed } : p,
+      ),
+    );
+  };
+
+  const handleClearCategory = (name: string) => {
+    setProducts(prev =>
+      prev.map(p => {
+        if (p.category !== name) return p;
+        const next = { ...p };
+        delete next.category;
+        return next;
+      }),
     );
   };
 
@@ -616,24 +692,28 @@ export default function App() {
 
             {leftTab === 'products' && (
               <>
-                <ProductCatalog
-                  onAdd={data => {
-                    setProducts(prev => [...prev, { ...data, id: generateId() }]);
-                    setShowSidebar(false);
-                  }}
-                />
-
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <h2 className="font-semibold text-gray-700 text-sm">Мої продукти</h2>
-                  <button
-                    onClick={() => {
-                      setShowAddForm(!showAddForm);
-                      setEditingProduct(null);
-                    }}
-                    className="text-sm text-blue-500 hover:text-blue-700 font-medium transition-colors"
-                  >
-                    {showAddForm ? 'Сховати' : '+ Вручну'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {products.length > 0 && (
+                      <button
+                        onClick={() => setShowCategoriesModal(true)}
+                        className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                        title="Керування категоріями"
+                      >
+                        Категорії
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setShowAddForm(!showAddForm);
+                        setEditingProduct(null);
+                      }}
+                      className="text-sm text-blue-500 hover:text-blue-700 font-medium transition-colors"
+                    >
+                      {showAddForm ? 'Сховати' : '+ Вручну'}
+                    </button>
+                  </div>
                 </div>
 
                 {products.length > 5 && (
@@ -646,20 +726,6 @@ export default function App() {
                   />
                 )}
 
-                {showAddForm && (
-                  <ProductForm
-                    onSave={handleAddProduct}
-                    onCancel={() => setShowAddForm(false)}
-                  />
-                )}
-
-                {editingProduct && (
-                  <ProductForm
-                    initial={editingProduct}
-                    onSave={handleEditProduct}
-                    onCancel={() => setEditingProduct(null)}
-                  />
-                )}
 
                 <div className="flex-1 space-y-2 overflow-y-auto">
                   {products.length === 0 ? (
@@ -671,25 +737,64 @@ export default function App() {
                       Нічого не знайдено
                     </p>
                   ) : (
-                    sortedProducts.map(product => {
-                      const unitSubtitle = product.unit
-                        ? `1 ${product.unit.label ?? 'шт'} = ${product.unit.gramsPerUnit}г${product.fixedPortion ? ' (фікс.)' : ''}`
-                        : undefined;
+                    productGroups.map(group => {
+                      const collapsed = collapsedCategories.has(group.name);
+                      const isSearchResults = group.name === 'Результати';
                       return (
-                        <DraggableProduct
-                          key={product.id}
-                          id={product.id}
-                          sourceType="product"
-                          nutrients={product}
-                          subtitle={unitSubtitle}
-                          pinned={pinnedIds.includes(product.id)}
-                          onTogglePin={() => togglePin(product.id)}
-                          onEdit={() => {
-                            setEditingProduct(product);
-                            setShowAddForm(false);
-                          }}
-                          onDelete={() => handleDeleteProduct(product.id)}
-                        />
+                        <div key={group.name} className="space-y-1">
+                          {!isSearchResults && (
+                            <button
+                              onClick={() => toggleCategoryCollapsed(group.name)}
+                              className="w-full flex items-center justify-between px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                            >
+                              <span className="truncate">
+                                {group.name}{' '}
+                                <span className="text-gray-400 font-normal">
+                                  ({group.items.length})
+                                </span>
+                              </span>
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className={`h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform ${
+                                  collapsed ? '' : 'rotate-180'
+                                }`}
+                                viewBox="0 0 20 20"
+                                fill="currentColor"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                            </button>
+                          )}
+                          {!collapsed && (
+                            <div className="space-y-1.5 pl-1">
+                              {group.items.map(product => {
+                                const unitSubtitle = product.unit
+                                  ? `1 ${product.unit.label ?? 'шт'} = ${product.unit.gramsPerUnit}г${product.fixedPortion ? ' (фікс.)' : ''}`
+                                  : undefined;
+                                return (
+                                  <DraggableProduct
+                                    key={product.id}
+                                    id={product.id}
+                                    sourceType="product"
+                                    nutrients={product}
+                                    subtitle={unitSubtitle}
+                                    pinned={pinnedIds.includes(product.id)}
+                                    onTogglePin={() => togglePin(product.id)}
+                                    onEdit={() => {
+                                      setEditingProduct(product);
+                                      setShowAddForm(false);
+                                    }}
+                                    onDelete={() => handleDeleteProduct(product.id)}
+                                  />
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                       );
                     })
                   )}
@@ -848,6 +953,61 @@ export default function App() {
           </div>
         )}
       </DragOverlay>
+
+      {/* Product create/edit modal */}
+      {(showAddForm || editingProduct) && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50"
+          onClick={() => {
+            setShowAddForm(false);
+            setEditingProduct(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-t-xl sm:rounded-xl shadow-xl w-full sm:w-[420px] sm:max-w-[95vw] max-h-[90vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-4 border-b flex items-center justify-between">
+              <h2 className="font-semibold">
+                {editingProduct ? 'Редагувати продукт' : 'Новий продукт'}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowAddForm(false);
+                  setEditingProduct(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 p-1 -m-1"
+                aria-label="Закрити"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto">
+              <ProductForm
+                initial={editingProduct ?? undefined}
+                onSave={editingProduct ? handleEditProduct : handleAddProduct}
+                onCancel={() => {
+                  setShowAddForm(false);
+                  setEditingProduct(null);
+                }}
+                categorySuggestions={categorySuggestions}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Categories management modal */}
+      {showCategoriesModal && (
+        <CategoriesModal
+          products={products}
+          onRename={handleRenameCategory}
+          onClear={handleClearCategory}
+          onCancel={() => setShowCategoriesModal(false)}
+        />
+      )}
 
       {/* Add item picker (mobile primary, also available on desktop) */}
       {addItemFor && (

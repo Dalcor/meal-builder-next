@@ -5,14 +5,16 @@ interface Props {
   onSave: (product: Omit<Product, 'id'>) => void;
   initial?: Product;
   onCancel?: () => void;
+  categorySuggestions?: string[];
 }
 
-export default function ProductForm({ onSave, initial, onCancel }: Props) {
+export default function ProductForm({ onSave, initial, onCancel, categorySuggestions = [] }: Props) {
   const [name, setName] = useState(initial?.name ?? '');
   const [calories, setCalories] = useState(initial?.calories?.toString() ?? '');
   const [protein, setProtein] = useState(initial?.protein?.toString() ?? '');
   const [fat, setFat] = useState(initial?.fat?.toString() ?? '');
   const [carbs, setCarbs] = useState(initial?.carbs?.toString() ?? '');
+  const [category, setCategory] = useState(initial?.category ?? '');
   const [hasUnit, setHasUnit] = useState(!!initial?.unit);
   const [gramsPerUnit, setGramsPerUnit] = useState(
     initial?.unit?.gramsPerUnit?.toString() ?? '',
@@ -32,6 +34,9 @@ export default function ProductForm({ onSave, initial, onCancel }: Props) {
       carbs: parseFloat(carbs) || 0,
     };
 
+    const trimmedCategory = category.trim();
+    if (trimmedCategory) data.category = trimmedCategory;
+
     if (hasUnit) {
       const g = parseFloat(gramsPerUnit);
       if (!(g > 0)) return;
@@ -49,6 +54,7 @@ export default function ProductForm({ onSave, initial, onCancel }: Props) {
       setProtein('');
       setFat('');
       setCarbs('');
+      setCategory('');
       setHasUnit(false);
       setGramsPerUnit('');
       setUnitLabel('');
@@ -57,7 +63,7 @@ export default function ProductForm({ onSave, initial, onCancel }: Props) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-2 p-3 bg-white rounded-lg shadow-sm border">
+    <form onSubmit={handleSubmit} className="space-y-2">
       <input
         type="text"
         placeholder="Назва продукту"
@@ -66,6 +72,21 @@ export default function ProductForm({ onSave, initial, onCancel }: Props) {
         className="w-full px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
         required
       />
+      <input
+        type="text"
+        placeholder="Категорія (необов'язково)"
+        value={category}
+        onChange={e => setCategory(e.target.value)}
+        list="product-form-categories"
+        className="w-full px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+      />
+      {categorySuggestions.length > 0 && (
+        <datalist id="product-form-categories">
+          {categorySuggestions.map(c => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <input
           type="number"

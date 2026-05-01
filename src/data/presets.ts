@@ -1,3 +1,5 @@
+import type { Product } from '../types';
+
 export interface PresetProduct {
   name: string;
   calories: number;
@@ -9,6 +11,20 @@ export interface PresetProduct {
 export interface PresetCategory {
   name: string;
   items: PresetProduct[];
+}
+
+export function buildSeedProducts(): Product[] {
+  return presetCategories.flatMap(cat =>
+    cat.items.map<Product>(item => ({
+      id: crypto.randomUUID(),
+      name: item.name,
+      calories: item.calories,
+      protein: item.protein,
+      fat: item.fat,
+      carbs: item.carbs,
+      category: cat.name,
+    })),
+  );
 }
 
 export const presetCategories: PresetCategory[] = [

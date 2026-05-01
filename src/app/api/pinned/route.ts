@@ -6,7 +6,7 @@ import { isStringArray } from '@/lib/validators';
 export async function GET() {
   const auth = await getAuthFromCookie();
   if (!auth) return NextResponse.json(null, { status: 401 });
-  return NextResponse.json(readSlice(auth.userId, 'pinnedIds'));
+  return NextResponse.json(await readSlice(auth.userId, 'pinnedIds'));
 }
 
 export async function PUT(req: Request) {
@@ -21,6 +21,6 @@ export async function PUT(req: Request) {
   if (!isStringArray(body)) {
     return NextResponse.json({ error: 'Invalid shape: expected string[]' }, { status: 400 });
   }
-  writeSlice(auth.userId, 'pinnedIds', body);
+  await writeSlice(auth.userId, 'pinnedIds', body);
   return NextResponse.json({ ok: true });
 }

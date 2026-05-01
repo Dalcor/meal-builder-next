@@ -1,11 +1,31 @@
-import fs from 'fs';
-import path from 'path';
 import bcrypt from 'bcryptjs';
+import { Redis } from '@upstash/redis';
 import type { UserData, UserSliceKey } from '@/types';
 
-const DB_DIR = path.join(process.cwd(), 'db');
-const USERS_FILE = path.join(DB_DIR, 'users.json');
-const USERDATA_DIR = path.join(DB_DIR, 'userdata');
+// All persistent state lives in Upstash Redis. The same env vars work
+// locally (drop them into .env.local) and on Vercel (auto-injected by the
+// Upstash marketplace integration). The legacy `KV_REST_API_*` names from
+// Vercel KV are accepted for backwards compatibility.
+function makeKv(): Redis {
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+  if (!url || !token) {
+    throw new Error(
+      'Missing Upstash credentials. Set UPSTASH_REDIS_REST_URL and ' +
+        'UPSTASH_REDIS_REST_TOKEN in .env.local (locally) or in your ' +
+        'Vercel project env vars.',
+    );
+  }
+  return new Redis({ url, token });
+}
+
+let _kv: Redis | null = null;
+function kv(): Redis {
+  if (!_kv) _kv = makeKv();
+  return _kv;
+}
 
 export interface DbUser {
   id: string;
@@ -13,18 +33,6 @@ export interface DbUser {
   name: string;
   passwordHash: string;
 }
-
-const SLICE_FILES: Record<UserSliceKey, string> = {
-  products: 'products.json',
-  dishes: 'dishes.json',
-  dailyMeals: 'daily-meals.json',
-  targets: 'targets.json',
-  macroTargets: 'macro-targets.json',
-  pinnedIds: 'pinned.json',
-  mealsDone: 'meals-done.json',
-  mealPresets: 'meal-presets.json',
-  weightLog: 'weight-log.json',
-};
 
 const SLICE_DEFAULTS: { [K in UserSliceKey]: UserData[K] } = {
   products: [],
@@ -38,107 +46,99 @@ const SLICE_DEFAULTS: { [K in UserSliceKey]: UserData[K] } = {
   weightLog: {},
 };
 
-function ensureDbDirs(): void {
-  if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-  if (!fs.existsSync(USERDATA_DIR)) fs.mkdirSync(USERDATA_DIR, { recursive: true });
-  if (!fs.existsSync(USERS_FILE)) {
-    // Seed with initial user: vr.peredera@gmail.com / mealbuilder123
-    const hash = bcrypt.hashSync('mealbuilder123', 10);
-    const seedUser: DbUser = {
-      id: 'user_1',
-      email: 'vr.peredera@gmail.com',
-      name: 'Viktor',
-      passwordHash: hash,
+const SEED_EMAIL = 'vr.peredera@gmail.com';
+const SEED_PASSWORD = 'mealbuilder123';
+const SEED_USER_ID = 'user_1';
+const SEED_USER_NAME = 'Viktor';
+
+// ---------- Key builders ----------
+
+function sliceKey(userId: string, key: UserSliceKey): string {
+  return `mb:user:${userId}:${key}`;
+}
+
+function userKey(id: string): string {
+  return `mb:user:${id}`;
+}
+
+function emailKey(email: string): string {
+  return `mb:userByEmail:${email.toLowerCase()}`;
+}
+
+// ---------- Lazy one-time seed of the demo account ----------
+//
+// Without this, a fresh KV instance has no users at all and login fails.
+// Idempotent: only writes if the seed email isn't already registered.
+let seedPromise: Promise<void> | null = null;
+
+async function ensureSeedUser(): Promise<void> {
+  if (seedPromise) return seedPromise;
+  seedPromise = (async () => {
+    const existing = await kv().get<string>(emailKey(SEED_EMAIL));
+    if (existing) return;
+    const seed: DbUser = {
+      id: SEED_USER_ID,
+      email: SEED_EMAIL,
+      name: SEED_USER_NAME,
+      passwordHash: bcrypt.hashSync(SEED_PASSWORD, 10),
     };
-    fs.writeFileSync(USERS_FILE, JSON.stringify([seedUser], null, 2));
-  }
+    await kv().set(userKey(seed.id), seed);
+    await kv().set(emailKey(seed.email), seed.id);
+  })().catch(err => {
+    seedPromise = null;
+    throw err;
+  });
+  return seedPromise;
 }
 
-function getUserDir(userId: string): string {
-  return path.join(USERDATA_DIR, userId);
+// ---------- Slices ----------
+
+export async function readSlice<K extends UserSliceKey>(
+  userId: string,
+  key: K,
+): Promise<UserData[K]> {
+  const v = await kv().get<UserData[K]>(sliceKey(userId, key));
+  return v ?? SLICE_DEFAULTS[key];
 }
 
-// Migrate the legacy single-file layout (`db/userdata/{userId}.json`) into
-// the per-slice directory layout. Idempotent and non-destructive: only fills
-// in slices that don't already exist on disk, then removes the legacy file.
-function migrateLegacyUserFile(userId: string): void {
-  const legacy = path.join(USERDATA_DIR, `${userId}.json`);
-  if (!fs.existsSync(legacy)) return;
-  const dir = getUserDir(userId);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-  let old: Record<string, unknown>;
-  try {
-    old = JSON.parse(fs.readFileSync(legacy, 'utf-8')) as Record<string, unknown>;
-  } catch {
-    return;
-  }
-
-  for (const key of Object.keys(SLICE_FILES) as UserSliceKey[]) {
-    const target = path.join(dir, SLICE_FILES[key]);
-    if (fs.existsSync(target)) continue;
-    const value = old[key] ?? SLICE_DEFAULTS[key];
-    fs.writeFileSync(target, JSON.stringify(value, null, 2));
-  }
-  fs.unlinkSync(legacy);
-}
-
-function ensureUserDir(userId: string): string {
-  ensureDbDirs();
-  const dir = getUserDir(userId);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  migrateLegacyUserFile(userId);
-  return dir;
-}
-
-export function readSlice<K extends UserSliceKey>(userId: string, key: K): UserData[K] {
-  const dir = ensureUserDir(userId);
-  const file = path.join(dir, SLICE_FILES[key]);
-  if (!fs.existsSync(file)) return SLICE_DEFAULTS[key];
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf-8')) as UserData[K];
-  } catch {
-    return SLICE_DEFAULTS[key];
-  }
-}
-
-export function writeSlice<K extends UserSliceKey>(
+export async function writeSlice<K extends UserSliceKey>(
   userId: string,
   key: K,
   value: UserData[K],
-): void {
-  const dir = ensureUserDir(userId);
-  const file = path.join(dir, SLICE_FILES[key]);
-  fs.writeFileSync(file, JSON.stringify(value, null, 2));
+): Promise<void> {
+  await kv().set(sliceKey(userId, key), value);
 }
 
-export function getUsers(): DbUser[] {
-  ensureDbDirs();
-  return JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
+// ---------- Users ----------
+
+export async function getUserByEmail(email: string): Promise<DbUser | undefined> {
+  await ensureSeedUser();
+  const id = await kv().get<string>(emailKey(email));
+  if (!id) return undefined;
+  return (await kv().get<DbUser>(userKey(id))) ?? undefined;
 }
 
-export function getUserByEmail(email: string): DbUser | undefined {
-  return getUsers().find(u => u.email === email);
+export async function getUserById(id: string): Promise<DbUser | undefined> {
+  await ensureSeedUser();
+  return (await kv().get<DbUser>(userKey(id))) ?? undefined;
 }
 
-export function getUserById(id: string): DbUser | undefined {
-  return getUsers().find(u => u.id === id);
-}
-
-export function createUser(email: string, name: string, password: string): DbUser {
-  ensureDbDirs();
-  const users = getUsers();
-  if (users.find(u => u.email === email)) {
-    throw new Error('User already exists');
-  }
+export async function createUser(
+  email: string,
+  name: string,
+  password: string,
+): Promise<DbUser> {
+  await ensureSeedUser();
+  const existing = await kv().get<string>(emailKey(email));
+  if (existing) throw new Error('User already exists');
   const newUser: DbUser = {
     id: `user_${Date.now()}`,
     email,
     name,
     passwordHash: bcrypt.hashSync(password, 10),
   };
-  users.push(newUser);
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  await kv().set(userKey(newUser.id), newUser);
+  await kv().set(emailKey(email), newUser.id);
   return newUser;
 }
 

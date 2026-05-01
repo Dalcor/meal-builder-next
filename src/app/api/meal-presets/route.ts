@@ -6,7 +6,7 @@ import { isMealPresetArray } from '@/lib/validators';
 export async function GET() {
   const auth = await getAuthFromCookie();
   if (!auth) return NextResponse.json(null, { status: 401 });
-  return NextResponse.json(readSlice(auth.userId, 'mealPresets'));
+  return NextResponse.json(await readSlice(auth.userId, 'mealPresets'));
 }
 
 export async function PUT(req: Request) {
@@ -21,6 +21,6 @@ export async function PUT(req: Request) {
   if (!isMealPresetArray(body)) {
     return NextResponse.json({ error: 'Invalid shape: expected MealPreset[]' }, { status: 400 });
   }
-  writeSlice(auth.userId, 'mealPresets', body);
+  await writeSlice(auth.userId, 'mealPresets', body);
   return NextResponse.json({ ok: true });
 }

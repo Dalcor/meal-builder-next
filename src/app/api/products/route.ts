@@ -6,7 +6,7 @@ import { isProductArray } from '@/lib/validators';
 export async function GET() {
   const auth = await getAuthFromCookie();
   if (!auth) return NextResponse.json(null, { status: 401 });
-  return NextResponse.json(readSlice(auth.userId, 'products'));
+  return NextResponse.json(await readSlice(auth.userId, 'products'));
 }
 
 export async function PUT(req: Request) {
@@ -21,6 +21,6 @@ export async function PUT(req: Request) {
   if (!isProductArray(body)) {
     return NextResponse.json({ error: 'Invalid shape: expected Product[]' }, { status: 400 });
   }
-  writeSlice(auth.userId, 'products', body);
+  await writeSlice(auth.userId, 'products', body);
   return NextResponse.json({ ok: true });
 }

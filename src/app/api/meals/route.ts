@@ -6,7 +6,7 @@ import { isDailyMeals } from '@/lib/validators';
 export async function GET() {
   const auth = await getAuthFromCookie();
   if (!auth) return NextResponse.json(null, { status: 401 });
-  return NextResponse.json(readSlice(auth.userId, 'dailyMeals'));
+  return NextResponse.json(await readSlice(auth.userId, 'dailyMeals'));
 }
 
 export async function PUT(req: Request) {
@@ -21,6 +21,6 @@ export async function PUT(req: Request) {
   if (!isDailyMeals(body)) {
     return NextResponse.json({ error: 'Invalid shape: expected Record<string, Meals>' }, { status: 400 });
   }
-  writeSlice(auth.userId, 'dailyMeals', body);
+  await writeSlice(auth.userId, 'dailyMeals', body);
   return NextResponse.json({ ok: true });
 }

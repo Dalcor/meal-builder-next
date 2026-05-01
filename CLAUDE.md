@@ -26,7 +26,7 @@
 | Drag & drop | `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`  | —                                 |
 | Auth        | JWT через `jose` + cookie                                   | —                                 |
 | Паролі      | `bcryptjs` (sync)                                           | —                                 |
-| Сховище     | JSON-файли в `/db`                                          | —                                 |
+| Сховище     | Upstash Redis (через `@upstash/redis`)                      | —                                 |
 | TypeScript  | strict                                                      | 5                                 |
 
 > **Next.js 16 має breaking changes**. Найважливіше для цього проєкту:
@@ -44,19 +44,12 @@ meal-builder-next/
 ├── CLAUDE.md                  # цей файл
 ├── docs/
 │   └── code-review.md         # інструкції для ревью
-├── db/                        # NOTE: persist; gitignore не покриває
-│   ├── users.json             # масив користувачів з bcrypt-хешами
-│   └── userdata/
-│       └── user_<id>/         # одна директорія на користувача
-│           ├── products.json
-│           ├── dishes.json
-│           ├── daily-meals.json
-│           ├── meal-presets.json
-│           ├── targets.json
-│           ├── macro-targets.json
-│           ├── pinned.json
-│           ├── meals-done.json
-│           └── weight-log.json
+├── db/                        # DEPRECATED: тільки як джерело для one-shot
+│                              # `npm run migrate:kv`. Після міграції видаліть.
+│   ├── users.json
+│   └── userdata/user_<id>/{products,dishes,...}.json
+├── scripts/
+│   └── migrate-fs-to-kv.mjs   # one-shot push з db/ у Upstash
 ├── public/                    # SVG іконки створені CRA-стартером
 ├── src/
 │   ├── app/                   # App Router
@@ -115,9 +108,10 @@ meal-builder-next/
 
 - **Завантаження:** при mount `DataProvider` робить **9 паралельних GET** (по одному на slice: `/api/products`, `/api/dishes`, `/api/meals`, `/api/meal-presets`, `/api/targets`, `/api/macro-targets`, `/api/pinned`, `/api/meals-done`, `/api/weight-log`).
 - **Збереження:** кожен slice має власний debounced (500мс) PUT через `useDebouncedSave`. Зміна одного slice (напр., `products`) НЕ триггерить PUT інших — кожен endpoint валідує тільки свою форму, тож пошкоджений запит не може стерти інші дані. Блок захищений `initialized.current = true` через 100мс після завантаження, щоб не зберегти defaults.
-- **Сервер:** `readSlice<K>(userId, key)` / `writeSlice<K>(userId, key, value)` працюють з `db/userdata/{userId}/{slice}.json`. На першому доступі автоматично мігрує застарілий монолітний файл `db/userdata/{userId}.json` у per-slice layout (idempotent, non-destructive).
+- **Сервер:** `readSlice<K>(userId, key)` / `writeSlice<K>(userId, key, value)` — async-функції в `src/lib/db.ts`, що читають/пишуть в Upstash Redis за ключами `mb:user:{userId}:{slice}`. Користувачі — `mb:user:{id}` + `mb:userByEmail:{email}` (індекс).
+- **Сід:** `ensureSeedUser()` lazy-створює demo-юзера (`vr.peredera@gmail.com` / `mealbuilder123`) на першому виклику auth-функції, якщо його ще нема в KV. Idempotent.
 - **Валідація:** кожен PUT route використовує type guard з `src/lib/validators.ts` (`isProductArray`, `isDailyMeals` тощо). Невалідне тіло → `400 Invalid shape`.
-- `fs.writeFileSync` все ще без блокувань — race condition при concurrent writes лишається технічним боргом.
+- **Файлова система більше не використовується** runtime-кодом. Папка `db/` залишена тимчасово як джерело для `npm run migrate:kv`.
 
 ### Drag & drop
 
@@ -143,18 +137,31 @@ meal-builder-next/
 
 ```bash
 npm install
+cp .env.example .env.local
+# Заповніть .env.local з Upstash dashboard (або `vercel env pull`)
 npm run dev   # http://localhost:3000
 ```
 
-Перший запуск автоматично створить `db/users.json` із seed-користувачем:
+Demo-користувач створюється автоматично в KV при першому виклику auth:
 
 - **Email:** `vr.peredera@gmail.com`
 - **Пароль:** `mealbuilder123`
 
-Це **виключно** для локальної розробки. У production задавайте:
+Обов'язкові env vars (локально і в prod):
 
-- `JWT_SECRET` — обов'язково, інакше використовується небезпечний fallback.
+- `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` — сховище. Альтернативні назви `KV_REST_API_URL` / `KV_REST_API_TOKEN` теж працюють.
+- `JWT_SECRET` — обов'язково в production, інакше використовується небезпечний fallback.
 - `NODE_ENV=production` — щоб cookie стало `secure`.
+
+### Міграція з file-based (one-time)
+
+Якщо у вас лишилися дані в `db/userdata/`, перенесіть їх у KV:
+
+```bash
+npm run migrate:kv   # читає .env.local + db/, пушить у Upstash
+```
+
+Після успіху можна `git rm -r db/`.
 
 ## Скрипти
 
@@ -167,7 +174,7 @@ npm run lint     # eslint
 
 ## Ключові інваріанти, які легко зламати
 
-1. **Не імпортуйте `src/lib/auth.ts` чи `src/lib/db.ts` у файли з `'use client'`** — вони використовують `fs` і `next/headers`. Імпорт лише з route handlers або серверних компонентів.
+1. **Не імпортуйте `src/lib/auth.ts` чи `src/lib/db.ts` у файли з `'use client'`** — вони використовують `next/headers` і Upstash REST client (з токеном). Імпорт лише з route handlers або серверних компонентів.
 2. **Не додавайте поле в `UserData`** без синхронізації: тип у `src/types.ts` → defaults і файл-мапа в `src/lib/db.ts` (`SLICE_FILES`, `SLICE_DEFAULTS`) → type guard у `src/lib/validators.ts` → новий `route.ts` у `src/app/api/...` → state + endpoint + `useDebouncedSave` у `src/context/DataContext.tsx`.
 3. **Не покладайтеся** на middleware/proxy для авторизації API — кожен route handler **сам** перевіряє `getAuthFromCookie()`.
 4. **Не міняйте формат `MealItem.sourceType`** без міграції наявних `db/userdata/*.json` — вони містять рядки `'product'` / `'dish'`.

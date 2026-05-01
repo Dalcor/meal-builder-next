@@ -6,7 +6,7 @@ import { isDishArray } from '@/lib/validators';
 export async function GET() {
   const auth = await getAuthFromCookie();
   if (!auth) return NextResponse.json(null, { status: 401 });
-  return NextResponse.json(readSlice(auth.userId, 'dishes'));
+  return NextResponse.json(await readSlice(auth.userId, 'dishes'));
 }
 
 export async function PUT(req: Request) {
@@ -21,6 +21,6 @@ export async function PUT(req: Request) {
   if (!isDishArray(body)) {
     return NextResponse.json({ error: 'Invalid shape: expected Dish[]' }, { status: 400 });
   }
-  writeSlice(auth.userId, 'dishes', body);
+  await writeSlice(auth.userId, 'dishes', body);
   return NextResponse.json({ ok: true });
 }

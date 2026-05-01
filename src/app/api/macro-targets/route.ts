@@ -6,7 +6,7 @@ import { isMacroTargets } from '@/lib/validators';
 export async function GET() {
   const auth = await getAuthFromCookie();
   if (!auth) return NextResponse.json(null, { status: 401 });
-  return NextResponse.json(readSlice(auth.userId, 'macroTargets'));
+  return NextResponse.json(await readSlice(auth.userId, 'macroTargets'));
 }
 
 export async function PUT(req: Request) {
@@ -21,6 +21,6 @@ export async function PUT(req: Request) {
   if (!isMacroTargets(body)) {
     return NextResponse.json({ error: 'Invalid shape: expected MacroTargets' }, { status: 400 });
   }
-  writeSlice(auth.userId, 'macroTargets', body);
+  await writeSlice(auth.userId, 'macroTargets', body);
   return NextResponse.json({ ok: true });
 }

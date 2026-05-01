@@ -4,7 +4,7 @@ import { setAuthCookie } from '@/lib/auth';
 
 export async function POST(req: Request) {
   const { email, password } = await req.json();
-  const user = getUserByEmail(email);
+  const user = await getUserByEmail(email);
   if (!user || !verifyPassword(user, password)) {
     return NextResponse.json({ error: 'Невірний email або пароль' }, { status: 401 });
   }

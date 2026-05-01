@@ -6,7 +6,7 @@ import { isWeightLog } from '@/lib/validators';
 export async function GET() {
   const auth = await getAuthFromCookie();
   if (!auth) return NextResponse.json(null, { status: 401 });
-  return NextResponse.json(readSlice(auth.userId, 'weightLog'));
+  return NextResponse.json(await readSlice(auth.userId, 'weightLog'));
 }
 
 export async function PUT(req: Request) {
@@ -21,6 +21,6 @@ export async function PUT(req: Request) {
   if (!isWeightLog(body)) {
     return NextResponse.json({ error: 'Invalid shape: expected Record<string, number>' }, { status: 400 });
   }
-  writeSlice(auth.userId, 'weightLog', body);
+  await writeSlice(auth.userId, 'weightLog', body);
   return NextResponse.json({ ok: true });
 }

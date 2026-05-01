@@ -89,13 +89,12 @@ function backfillSnapshots(
 
 type BaselinesRef = React.MutableRefObject<Partial<UserData>>;
 
-// Persist `value` to `endpoint` with bounded retries. Network blips and
-// brief Vercel function unavailability during a deploy are common; we
-// retry transient failures so the user's edit survives. Validation
-// failures (4xx) are NOT retried — those are bugs in our code that
-// repeating won't fix, but we DO log them so they show up in DevTools
-// rather than disappearing into a silent .catch.
-async function persistSlice(endpoint: string, body: string): Promise<void> {
+// Persist `value` to `endpoint` with bounded retries. Returns true on
+// success, false on any failure (validation 4xx, exhausted 5xx/network
+// retries). Network blips and brief Vercel function unavailability
+// during a deploy are common; transient failures are retried so the
+// user's edit survives.
+async function persistSlice(endpoint: string, body: string): Promise<boolean> {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -105,13 +104,13 @@ async function persistSlice(endpoint: string, body: string): Promise<void> {
         body,
         keepalive: true,
       });
-      if (r.ok) return;
+      if (r.ok) return true;
       if (r.status >= 400 && r.status < 500) {
         console.error(
           `[meal-builder] PUT ${endpoint} → ${r.status}; not retrying. ` +
             `Body shape was likely rejected by the validator.`,
         );
-        return;
+        return false;
       }
       console.warn(
         `[meal-builder] PUT ${endpoint} → ${r.status} (attempt ${attempt}/${maxAttempts})`,
@@ -127,6 +126,7 @@ async function persistSlice(endpoint: string, body: string): Promise<void> {
     }
   }
   console.error(`[meal-builder] PUT ${endpoint} gave up after ${maxAttempts} attempts`);
+  return false;
 }
 
 // Persists `value` to `endpoint` with a debounce, but only when `value`
@@ -158,9 +158,13 @@ function useDebouncedSliceSave<K extends keyof UserData>(
     if (base === undefined) return; // bootstrap hasn't populated baselines yet
     if (base === value) return; // unchanged from last persisted state
     const captured = value;
-    const timer = setTimeout(() => {
-      baselines.current[key] = captured;
-      persistSlice(endpoint, JSON.stringify(captured));
+    const timer = setTimeout(async () => {
+      // Update the baseline ONLY after the server confirms the write.
+      // Otherwise a failed PUT (deploy mid-request, validator reject,
+      // network drop) would mark the value as "saved" locally while
+      // KV still holds the old data — a reload would resurrect it.
+      const ok = await persistSlice(endpoint, JSON.stringify(captured));
+      if (ok) baselines.current[key] = captured;
     }, delayMs);
     return () => clearTimeout(timer);
   }, [key, endpoint, value, ready, baselines, delayMs]);

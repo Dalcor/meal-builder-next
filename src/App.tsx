@@ -24,6 +24,7 @@ import ReplaceItemModal from '@/components/ReplaceItemModal';
 import StatsPanel from '@/components/StatsPanel';
 import AddItemModal from '@/components/AddItemModal';
 import CategoriesModal from '@/components/CategoriesModal';
+import SettingsModal from '@/components/SettingsModal';
 import { presetCategories } from '@/data/presets';
 
 const MEAL_TYPES: { type: MealType; label: string }[] = [
@@ -107,7 +108,7 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeSourceType, setActiveSourceType] = useState<'product' | 'dish' | null>(null);
   const [productSearch, setProductSearch] = useState('');
-  const [showMacroSettings, setShowMacroSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [pastePresetForMeal, setPastePresetForMeal] = useState<MealType | null>(null);
   const [savePresetModal, setSavePresetModal] = useState<{ type: MealType; defaultName: string } | null>(null);
   const [replaceModal, setReplaceModal] = useState<{ mealType: MealType; item: MealItem; nutrients: FoodNutrients } | null>(null);
@@ -544,10 +545,10 @@ export default function App() {
                   Статистика
                 </button>
                 <button
-                  onClick={() => setShowMacroSettings(!showMacroSettings)}
+                  onClick={() => setShowSettings(true)}
                   className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  {showMacroSettings ? 'Сховати' : 'Налаштування'}
+                  Налаштування
                 </button>
                 <button
                   onClick={logout}
@@ -627,36 +628,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Macro settings */}
-            {showMacroSettings && (
-              <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-3 sm:gap-4 text-xs sm:text-sm">
-                <label className="flex items-center gap-1.5">
-                  <span className="text-gray-500">Білки (ціль):</span>
-                  <input
-                    type="number"
-                    value={macroTargets.proteinGrams || ''}
-                    onChange={e => setMacroTargets(prev => ({ ...prev, proteinGrams: parseInt(e.target.value) || 0 }))}
-                    className="w-16 px-2 py-0.5 border rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    placeholder="г"
-                    min="0"
-                  />
-                  <span className="text-gray-400">г/день</span>
-                </label>
-                <label className="flex items-center gap-1.5">
-                  <span className="text-gray-500">Жири (макс):</span>
-                  <input
-                    type="number"
-                    value={macroTargets.fatPercent || ''}
-                    onChange={e => setMacroTargets(prev => ({ ...prev, fatPercent: parseInt(e.target.value) || 0 }))}
-                    className="w-16 px-2 py-0.5 border rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    placeholder="%"
-                    min="0"
-                    max="100"
-                  />
-                  <span className="text-gray-400">% калорій</span>
-                </label>
-              </div>
-            )}
           </div>
         </header>
 
@@ -1028,6 +999,18 @@ export default function App() {
           onRename={handleRenameCategory}
           onClear={handleClearCategory}
           onCancel={() => setShowCategoriesModal(false)}
+        />
+      )}
+
+      {/* Settings (macro) modal */}
+      {showSettings && (
+        <SettingsModal
+          macroTargets={macroTargets}
+          onSave={next => {
+            setMacroTargets(next);
+            setShowSettings(false);
+          }}
+          onCancel={() => setShowSettings(false)}
         />
       )}
 

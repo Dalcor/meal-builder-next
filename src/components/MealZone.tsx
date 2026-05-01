@@ -1,6 +1,7 @@
 import { useDroppable } from '@dnd-kit/core';
 import type { Product, Dish, MealItem, MealType, FoodNutrients } from '../types';
 import { getMealItemNutrients, getMealItemUnit } from '../utils/nutrients';
+import InlineNumberEdit from './InlineNumberEdit';
 
 interface Props {
   type: MealType;
@@ -121,16 +122,15 @@ export default function MealZone({
               </svg>
             </button>
           </div>
-          <div className="flex items-center gap-1 text-xs flex-shrink-0">
-            <input
-              type="number"
-              value={targetCalories || ''}
-              onChange={e => onTargetChange(parseInt(e.target.value) || 0)}
-              className="w-14 sm:w-16 px-1.5 py-0.5 border rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
-              placeholder="ккал"
-              min="0"
+          <div className="flex items-center text-xs flex-shrink-0">
+            <InlineNumberEdit
+              value={targetCalories}
+              onSave={value => onTargetChange(Math.round(value))}
+              unit="ккал"
+              placeholder="ціль"
+              ariaLabel="Редагувати ціль калорій"
+              min={0}
             />
-            <span className="text-gray-500 hidden sm:inline">ккал</span>
           </div>
         </div>
         <div className="flex items-center gap-3 mt-1.5">

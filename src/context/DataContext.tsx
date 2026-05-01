@@ -286,15 +286,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const ready = !loading;
-  useDebouncedSliceSave('products', ENDPOINTS.products, products, ready, baselines);
-  useDebouncedSliceSave('dishes', ENDPOINTS.dishes, dishes, ready, baselines);
-  useDebouncedSliceSave('dailyMeals', ENDPOINTS.dailyMeals, dailyMeals, ready, baselines);
-  useDebouncedSliceSave('targets', ENDPOINTS.targets, targets, ready, baselines);
-  useDebouncedSliceSave('macroTargets', ENDPOINTS.macroTargets, macroTargets, ready, baselines);
-  useDebouncedSliceSave('pinnedIds', ENDPOINTS.pinnedIds, pinnedIds, ready, baselines);
-  useDebouncedSliceSave('mealsDone', ENDPOINTS.mealsDone, mealsDone, ready, baselines);
-  useDebouncedSliceSave('mealPresets', ENDPOINTS.mealPresets, mealPresets, ready, baselines);
-  useDebouncedSliceSave('weightLog', ENDPOINTS.weightLog, weightLog, ready, baselines);
+  // Discrete slices change once per user action (click / drag / toggle),
+  // so a tiny debounce is enough to coalesce React's batched re-renders.
+  // The two `*Targets` slices are bound to <input type="number"> fields
+  // that update on every keystroke, so they need real batching.
+  useDebouncedSliceSave('products', ENDPOINTS.products, products, ready, baselines, 50);
+  useDebouncedSliceSave('dishes', ENDPOINTS.dishes, dishes, ready, baselines, 50);
+  useDebouncedSliceSave('dailyMeals', ENDPOINTS.dailyMeals, dailyMeals, ready, baselines, 50);
+  useDebouncedSliceSave('targets', ENDPOINTS.targets, targets, ready, baselines, 400);
+  useDebouncedSliceSave('macroTargets', ENDPOINTS.macroTargets, macroTargets, ready, baselines, 400);
+  useDebouncedSliceSave('pinnedIds', ENDPOINTS.pinnedIds, pinnedIds, ready, baselines, 50);
+  useDebouncedSliceSave('mealsDone', ENDPOINTS.mealsDone, mealsDone, ready, baselines, 50);
+  useDebouncedSliceSave('mealPresets', ENDPOINTS.mealPresets, mealPresets, ready, baselines, 50);
+  useDebouncedSliceSave('weightLog', ENDPOINTS.weightLog, weightLog, ready, baselines, 50);
 
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });

@@ -380,28 +380,58 @@ export default function App() {
   };
 
   // --- Totals ---
-  const dayTotals = useMemo(() => {
-    return Object.values(meals)
-      .flat()
-      .reduce(
-        (acc, item) => {
-          const n = getMealItemNutrients(item, products, dishes);
-          if (!n) return acc;
-          const ratio = item.grams / 100;
-          return {
-            calories: acc.calories + n.calories * ratio,
-            protein: acc.protein + n.protein * ratio,
-            fat: acc.fat + n.fat * ratio,
-            carbs: acc.carbs + n.carbs * ratio,
-          };
-        },
-        { calories: 0, protein: 0, fat: 0, carbs: 0 }
-      );
-  }, [meals, products, dishes]);
+  // `dayPlannedTotals` is the full sum of everything in today's meals
+  // (regardless of the "done" checkbox). `dayDoneTotals` is the same sum
+  // restricted to meals that the user has actually checked off as eaten.
+  // The header summary uses the done totals; planned is shown as a small
+  // secondary line only when it differs.
+  const sumItems = (items: MealItem[]) =>
+    items.reduce(
+      (acc, item) => {
+        const n = getMealItemNutrients(item, products, dishes);
+        if (!n) return acc;
+        const ratio = item.grams / 100;
+        return {
+          calories: acc.calories + n.calories * ratio,
+          protein: acc.protein + n.protein * ratio,
+          fat: acc.fat + n.fat * ratio,
+          carbs: acc.carbs + n.carbs * ratio,
+        };
+      },
+      { calories: 0, protein: 0, fat: 0, carbs: 0 },
+    );
+
+  const dayPlannedTotals = useMemo(
+    () => sumItems(Object.values(meals).flat()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [meals, products, dishes],
+  );
+
+  const dayDoneTotals = useMemo(() => {
+    const totals = { calories: 0, protein: 0, fat: 0, carbs: 0 };
+    const flags = mealsDone[selectedDate];
+    for (const type of ['breakfast', 'lunch', 'dinner', 'snacks'] as MealType[]) {
+      if (!flags?.[type]) continue;
+      const partial = sumItems(meals[type]);
+      totals.calories += partial.calories;
+      totals.protein += partial.protein;
+      totals.fat += partial.fat;
+      totals.carbs += partial.carbs;
+    }
+    return totals;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meals, mealsDone, selectedDate, products, dishes]);
 
   const totalTarget = targets.breakfast + targets.lunch + targets.dinner + targets.snacks;
-  const fatCalories = dayTotals.fat * 9;
-  const fatPercent = dayTotals.calories > 0 ? (fatCalories / dayTotals.calories) * 100 : 0;
+  const fatCalories = dayDoneTotals.fat * 9;
+  const fatPercent = dayDoneTotals.calories > 0 ? (fatCalories / dayDoneTotals.calories) * 100 : 0;
+  // Show the planned subline only when it adds information — i.e. there
+  // is at least one not-yet-done meal item with calories.
+  const plannedDiffersFromDone =
+    Math.abs(dayPlannedTotals.calories - dayDoneTotals.calories) > 0.5 ||
+    Math.abs(dayPlannedTotals.protein - dayDoneTotals.protein) > 0.05 ||
+    Math.abs(dayPlannedTotals.fat - dayDoneTotals.fat) > 0.05 ||
+    Math.abs(dayPlannedTotals.carbs - dayDoneTotals.carbs) > 0.05;
 
   // --- Sorted products (pinned first, then filtered by search) ---
   const sortedProducts = useMemo(() => {
@@ -559,11 +589,11 @@ export default function App() {
               </div>
             </div>
 
-            {/* Macro summary bar */}
+            {/* Macro summary — counts only meals checked off as eaten */}
             <div className="flex items-center gap-3 sm:gap-6 mt-2 text-xs sm:text-sm flex-wrap">
               <div className="flex items-center gap-1.5">
                 <span className="text-gray-500">Ккал:</span>
-                <span className="font-semibold">{dayTotals.calories.toFixed(0)}</span>
+                <span className="font-semibold">{dayDoneTotals.calories.toFixed(0)}</span>
                 {totalTarget > 0 && (
                   <span className="text-gray-400">/ {totalTarget}</span>
                 )}
@@ -572,10 +602,10 @@ export default function App() {
               <div className="flex items-center gap-1.5">
                 <span className="text-gray-500">Білки:</span>
                 <span className={`font-semibold ${
-                  macroTargets.proteinGrams > 0 && dayTotals.protein >= macroTargets.proteinGrams
+                  macroTargets.proteinGrams > 0 && dayDoneTotals.protein >= macroTargets.proteinGrams
                     ? 'text-green-600' : ''
                 }`}>
-                  {dayTotals.protein.toFixed(1)}г
+                  {dayDoneTotals.protein.toFixed(1)}г
                 </span>
                 {macroTargets.proteinGrams > 0 && (
                   <span className="text-gray-400">/ {macroTargets.proteinGrams}г</span>
@@ -593,25 +623,47 @@ export default function App() {
                 {macroTargets.fatPercent > 0 && (
                   <span className="text-gray-400 hidden sm:inline">/ max {macroTargets.fatPercent}%</span>
                 )}
-                <span className="text-gray-400 text-xs hidden sm:inline">({dayTotals.fat.toFixed(1)}г)</span>
+                <span className="text-gray-400 text-xs hidden sm:inline">({dayDoneTotals.fat.toFixed(1)}г)</span>
               </div>
 
               <div className="flex items-center gap-1.5">
                 <span className="text-gray-500">Вуглеводи:</span>
-                <span className="font-semibold">{dayTotals.carbs.toFixed(1)}г</span>
+                <span className="font-semibold">{dayDoneTotals.carbs.toFixed(1)}г</span>
               </div>
             </div>
 
-            {/* Progress bars */}
+            {/* Planned subline — shown only when there's still un-checked food */}
+            {plannedDiffersFromDone && (
+              <div className="mt-1 text-xs text-gray-400 flex items-center gap-2 flex-wrap">
+                <span>Заплановано на день:</span>
+                <span className="font-medium tabular-nums">
+                  {dayPlannedTotals.calories.toFixed(0)} ккал
+                </span>
+                <span>·</span>
+                <span className="font-medium tabular-nums">
+                  Б {dayPlannedTotals.protein.toFixed(1)}
+                </span>
+                <span className="hidden sm:inline">·</span>
+                <span className="font-medium tabular-nums hidden sm:inline">
+                  Ж {dayPlannedTotals.fat.toFixed(1)}
+                </span>
+                <span className="hidden sm:inline">·</span>
+                <span className="font-medium tabular-nums hidden sm:inline">
+                  В {dayPlannedTotals.carbs.toFixed(1)}
+                </span>
+              </div>
+            )}
+
+            {/* Progress bars — also based on done totals */}
             <div className="hidden sm:flex gap-4 mt-2">
               {totalTarget > 0 && (
                 <div className="flex-1">
                   <div className="w-full bg-gray-100 rounded-full h-1.5">
                     <div
                       className={`h-1.5 rounded-full transition-all ${
-                        dayTotals.calories > totalTarget ? 'bg-red-400' : 'bg-blue-400'
+                        dayDoneTotals.calories > totalTarget ? 'bg-red-400' : 'bg-blue-400'
                       }`}
-                      style={{ width: `${Math.min((dayTotals.calories / totalTarget) * 100, 100)}%` }}
+                      style={{ width: `${Math.min((dayDoneTotals.calories / totalTarget) * 100, 100)}%` }}
                     />
                   </div>
                 </div>
@@ -621,7 +673,7 @@ export default function App() {
                   <div className="w-full bg-gray-100 rounded-full h-1.5">
                     <div
                       className="h-1.5 rounded-full transition-all bg-green-400"
-                      style={{ width: `${Math.min((dayTotals.protein / macroTargets.proteinGrams) * 100, 100)}%` }}
+                      style={{ width: `${Math.min((dayDoneTotals.protein / macroTargets.proteinGrams) * 100, 100)}%` }}
                     />
                   </div>
                 </div>

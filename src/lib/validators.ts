@@ -30,14 +30,23 @@ function isBool(v: unknown): v is boolean {
 
 function isProduct(v: unknown): v is Product {
   if (!isObj(v)) return false;
-  return (
-    isStr(v.id) &&
-    isStr(v.name) &&
-    isNum(v.calories) &&
-    isNum(v.protein) &&
-    isNum(v.fat) &&
-    isNum(v.carbs)
-  );
+  if (
+    !isStr(v.id) ||
+    !isStr(v.name) ||
+    !isNum(v.calories) ||
+    !isNum(v.protein) ||
+    !isNum(v.fat) ||
+    !isNum(v.carbs)
+  ) {
+    return false;
+  }
+  if (v.unit !== undefined) {
+    if (!isObj(v.unit)) return false;
+    if (!isNum(v.unit.gramsPerUnit) || v.unit.gramsPerUnit <= 0) return false;
+    if (v.unit.label !== undefined && !isStr(v.unit.label)) return false;
+  }
+  if (v.fixedPortion !== undefined && !isBool(v.fixedPortion)) return false;
+  return true;
 }
 
 export function isProductArray(v: unknown): v is Product[] {

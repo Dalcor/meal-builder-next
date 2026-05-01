@@ -21,6 +21,11 @@ interface Props {
   onToggleDone: () => void;
 }
 
+function formatUnits(n: number): string {
+  if (!Number.isFinite(n)) return '0';
+  return Number.isInteger(n) ? n.toString() : parseFloat(n.toFixed(1)).toString();
+}
+
 const MEAL_COLORS: Record<MealType, { bg: string; border: string; header: string }> = {
   breakfast: { bg: 'bg-amber-50', border: 'border-amber-200', header: 'bg-amber-100' },
   lunch: { bg: 'bg-green-50', border: 'border-green-200', header: 'bg-green-100' },
@@ -155,6 +160,11 @@ export default function MealZone({
               const n = getNutrients(item);
               if (!n) return null;
               const ratio = item.grams / 100;
+              const product =
+                item.sourceType === 'product'
+                  ? products.find(p => p.id === item.sourceId)
+                  : undefined;
+              const unit = product?.unit;
               return (
                 <div
                   key={item.id}
@@ -168,7 +178,11 @@ export default function MealZone({
                       {n.name}
                     </div>
                     <div className="text-xs text-gray-400">
-                      {item.grams}г — {(n.calories * ratio).toFixed(0)} ккал
+                      {unit
+                        ? `${formatUnits(item.grams / unit.gramsPerUnit)} ${unit.label ?? 'шт'} (${item.grams}г)`
+                        : `${item.grams}г`}
+                      {' — '}
+                      {(n.calories * ratio).toFixed(0)} ккал
                       <span className="hidden sm:inline">
                         {' '}| Б {(n.protein * ratio).toFixed(1)}
                         {' '}| Ж {(n.fat * ratio).toFixed(1)}

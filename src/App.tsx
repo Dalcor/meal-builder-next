@@ -109,6 +109,7 @@ export default function App() {
     mealType: MealType;
     editItemId?: string;
     initialGrams?: number;
+    unit?: Product['unit'];
   } | null>(null);
 
   const sensors = useSensors(
@@ -205,9 +206,23 @@ export default function App() {
         setMeals(prev => ({ ...prev, [mealType]: [...prev[mealType], newItem] }));
         return;
       }
+      setPortionModal({ nutrients, sourceType, sourceId, mealType });
+      return;
     }
 
-    setPortionModal({ nutrients, sourceType, sourceId, mealType });
+    // Product path
+    const product = products.find(p => p.id === sourceId);
+    if (product?.unit && product.fixedPortion) {
+      const newItem: MealItem = {
+        id: generateId(),
+        sourceType,
+        sourceId,
+        grams: product.unit.gramsPerUnit,
+      };
+      setMeals(prev => ({ ...prev, [mealType]: [...prev[mealType], newItem] }));
+      return;
+    }
+    setPortionModal({ nutrients, sourceType, sourceId, mealType, unit: product?.unit });
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -264,6 +279,10 @@ export default function App() {
     if (!item) return;
     const nutrients = getSourceNutrients(item.sourceType, item.sourceId, products, dishes);
     if (!nutrients) return;
+    const unit =
+      item.sourceType === 'product'
+        ? products.find(p => p.id === item.sourceId)?.unit
+        : undefined;
     setPortionModal({
       nutrients,
       sourceType: item.sourceType,
@@ -271,6 +290,7 @@ export default function App() {
       mealType,
       editItemId: itemId,
       initialGrams: item.grams,
+      unit,
     });
   };
 
@@ -645,21 +665,27 @@ export default function App() {
                       Нічого не знайдено
                     </p>
                   ) : (
-                    sortedProducts.map(product => (
-                      <DraggableProduct
-                        key={product.id}
-                        id={product.id}
-                        sourceType="product"
-                        nutrients={product}
-                        pinned={pinnedIds.includes(product.id)}
-                        onTogglePin={() => togglePin(product.id)}
-                        onEdit={() => {
-                          setEditingProduct(product);
-                          setShowAddForm(false);
-                        }}
-                        onDelete={() => handleDeleteProduct(product.id)}
-                      />
-                    ))
+                    sortedProducts.map(product => {
+                      const unitSubtitle = product.unit
+                        ? `1 ${product.unit.label ?? 'шт'} = ${product.unit.gramsPerUnit}г${product.fixedPortion ? ' (фікс.)' : ''}`
+                        : undefined;
+                      return (
+                        <DraggableProduct
+                          key={product.id}
+                          id={product.id}
+                          sourceType="product"
+                          nutrients={product}
+                          subtitle={unitSubtitle}
+                          pinned={pinnedIds.includes(product.id)}
+                          onTogglePin={() => togglePin(product.id)}
+                          onEdit={() => {
+                            setEditingProduct(product);
+                            setShowAddForm(false);
+                          }}
+                          onDelete={() => handleDeleteProduct(product.id)}
+                        />
+                      );
+                    })
                   )}
                 </div>
               </>
@@ -834,6 +860,7 @@ export default function App() {
       {portionModal && (
         <PortionModal
           product={portionModal.nutrients}
+          unit={portionModal.unit}
           initialGrams={portionModal.initialGrams}
           onConfirm={handlePortionConfirm}
           onCancel={() => setPortionModal(null)}

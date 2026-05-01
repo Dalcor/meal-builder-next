@@ -1,3 +1,8 @@
+export interface ProductUnit {
+  gramsPerUnit: number;
+  label?: string; // default "шт"
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -5,6 +10,11 @@ export interface Product {
   protein: number;
   fat: number;
   carbs: number;
+  // Optional unit-based portioning (e.g., 1 яйце = 60г, 1 рафаелло = 10г).
+  // KBJU stays per 100g; this just changes how the user inputs/sees grams.
+  unit?: ProductUnit;
+  // Only meaningful with `unit`: drag-and-drop adds 1 unit without prompting.
+  fixedPortion?: boolean;
 }
 
 export interface DishIngredient {

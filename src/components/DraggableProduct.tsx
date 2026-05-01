@@ -38,7 +38,11 @@ export default function DraggableProduct({ id, sourceType, nutrients, subtitle, 
         className="flex-1 sm:cursor-grab sm:active:cursor-grabbing select-none min-w-0 touch-manipulation"
       >
         <div className="font-medium text-sm truncate">{nutrients.name}</div>
-        {subtitle && <div className="text-xs text-purple-500">{subtitle}</div>}
+        {subtitle && (
+          <div className={`text-xs ${sourceType === 'dish' ? 'text-purple-500' : 'text-amber-600'}`}>
+            {subtitle}
+          </div>
+        )}
         <div className="text-xs text-gray-500">
           {nutrients.calories} ккал | Б {nutrients.protein} | Ж {nutrients.fat} | В {nutrients.carbs}
         </div>

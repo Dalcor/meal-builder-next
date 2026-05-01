@@ -129,6 +129,12 @@ export default function AddItemModal({
                       <div className="font-medium text-sm">{p.name}</div>
                       <div className="text-xs text-gray-500">
                         {p.calories} ккал | Б {p.protein} | Ж {p.fat} | В {p.carbs}
+                        {p.unit && (
+                          <span className="text-amber-600">
+                            {' · 1 '}{p.unit.label ?? 'шт'} = {p.unit.gramsPerUnit}г
+                            {p.fixedPortion ? ' (фікс.)' : ''}
+                          </span>
+                        )}
                       </div>
                     </button>
                   );

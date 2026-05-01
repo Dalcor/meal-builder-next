@@ -13,23 +13,46 @@ export default function ProductForm({ onSave, initial, onCancel }: Props) {
   const [protein, setProtein] = useState(initial?.protein?.toString() ?? '');
   const [fat, setFat] = useState(initial?.fat?.toString() ?? '');
   const [carbs, setCarbs] = useState(initial?.carbs?.toString() ?? '');
+  const [hasUnit, setHasUnit] = useState(!!initial?.unit);
+  const [gramsPerUnit, setGramsPerUnit] = useState(
+    initial?.unit?.gramsPerUnit?.toString() ?? '',
+  );
+  const [unitLabel, setUnitLabel] = useState(initial?.unit?.label ?? '');
+  const [fixedPortion, setFixedPortion] = useState(!!initial?.fixedPortion);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave({
+
+    const data: Omit<Product, 'id'> = {
       name: name.trim(),
       calories: parseFloat(calories) || 0,
       protein: parseFloat(protein) || 0,
       fat: parseFloat(fat) || 0,
       carbs: parseFloat(carbs) || 0,
-    });
+    };
+
+    if (hasUnit) {
+      const g = parseFloat(gramsPerUnit);
+      if (!(g > 0)) return;
+      data.unit = { gramsPerUnit: g };
+      const trimmed = unitLabel.trim();
+      if (trimmed) data.unit.label = trimmed;
+      if (fixedPortion) data.fixedPortion = true;
+    }
+
+    onSave(data);
+
     if (!initial) {
       setName('');
       setCalories('');
       setProtein('');
       setFat('');
       setCarbs('');
+      setHasUnit(false);
+      setGramsPerUnit('');
+      setUnitLabel('');
+      setFixedPortion(false);
     }
   };
 
@@ -81,7 +104,54 @@ export default function ProductForm({ onSave, initial, onCancel }: Props) {
           step="any"
         />
       </div>
-      <div className="flex gap-2">
+
+      <label className="flex items-center gap-2 cursor-pointer text-sm pt-1">
+        <input
+          type="checkbox"
+          checked={hasUnit}
+          onChange={e => setHasUnit(e.target.checked)}
+          className="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
+        />
+        <span className="text-gray-700">Зберігати в штуках</span>
+        <span className="text-xs text-gray-400">— наприклад, 1 яйце = 60г</span>
+      </label>
+
+      {hasUnit && (
+        <div className="space-y-2 pl-6 border-l-2 border-blue-100">
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              placeholder="Грамів на штуку"
+              value={gramsPerUnit}
+              onChange={e => setGramsPerUnit(e.target.value)}
+              className="flex-1 px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              min="0.001"
+              step="any"
+              required
+            />
+            <input
+              type="text"
+              placeholder="шт"
+              value={unitLabel}
+              onChange={e => setUnitLabel(e.target.value)}
+              className="w-20 px-2 py-1.5 border rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
+              maxLength={12}
+            />
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer text-sm">
+            <input
+              type="checkbox"
+              checked={fixedPortion}
+              onChange={e => setFixedPortion(e.target.checked)}
+              className="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
+            />
+            <span className="text-gray-700">Фіксована порція</span>
+            <span className="text-xs text-gray-400">— перетягування додає 1 шт без запиту</span>
+          </label>
+        </div>
+      )}
+
+      <div className="flex gap-2 pt-1">
         <button
           type="submit"
           className="flex-1 bg-blue-500 text-white py-1.5 rounded text-sm font-medium hover:bg-blue-600 transition-colors"

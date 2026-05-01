@@ -21,18 +21,16 @@ export default function ReplaceItemModal({ currentItem, currentNutrients, produc
   const query = search.toLowerCase().trim();
 
   const filteredProducts = useMemo(() => {
-    const list = query
+    return query
       ? products.filter(p => p.name.toLowerCase().includes(query))
       : products;
-    return list.filter(p => !(currentItem.sourceType === 'product' && p.id === currentItem.sourceId));
-  }, [products, query, currentItem]);
+  }, [products, query]);
 
   const filteredDishes = useMemo(() => {
-    const list = query
+    return query
       ? dishes.filter(d => d.name.toLowerCase().includes(query))
       : dishes;
-    return list.filter(d => !(currentItem.sourceType === 'dish' && d.id === currentItem.sourceId));
-  }, [dishes, query, currentItem]);
+  }, [dishes, query]);
 
   const selectedNutrients = useMemo(() => {
     if (!selectedType || !selectedId) return null;

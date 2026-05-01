@@ -4,13 +4,20 @@ import type { UserData, UserSliceKey } from '@/types';
 
 // All persistent state lives in Upstash Redis. The same env vars work
 // locally (drop them into .env.local) and on Vercel (auto-injected by the
-// Upstash marketplace integration). The legacy `KV_REST_API_*` names from
-// Vercel KV are accepted for backwards compatibility.
+// Upstash marketplace integration). Several env-var naming conventions
+// are accepted so this code works across Vercel integration variants:
+//   - UPSTASH_REDIS_REST_*           (Upstash CLI / direct)
+//   - KV_REST_API_*                  (legacy Vercel KV)
+//   - STORAGE_KV_REST_API_*          (Vercel marketplace integration named "STORAGE")
 function makeKv(): Redis {
   const url =
-    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+    process.env.UPSTASH_REDIS_REST_URL ??
+    process.env.KV_REST_API_URL ??
+    process.env.STORAGE_KV_REST_API_URL;
   const token =
-    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+    process.env.UPSTASH_REDIS_REST_TOKEN ??
+    process.env.KV_REST_API_TOKEN ??
+    process.env.STORAGE_KV_REST_API_TOKEN;
   if (!url || !token) {
     throw new Error(
       'Missing Upstash credentials. Set UPSTASH_REDIS_REST_URL and ' +

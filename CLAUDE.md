@@ -44,12 +44,6 @@ meal-builder-next/
 ├── CLAUDE.md                  # цей файл
 ├── docs/
 │   └── code-review.md         # інструкції для ревью
-├── db/                        # DEPRECATED: тільки як джерело для one-shot
-│                              # `npm run migrate:kv`. Після міграції видаліть.
-│   ├── users.json
-│   └── userdata/user_<id>/{products,dishes,...}.json
-├── scripts/
-│   └── migrate-fs-to-kv.mjs   # one-shot push з db/ у Upstash
 ├── public/                    # SVG іконки створені CRA-стартером
 ├── src/
 │   ├── app/                   # App Router
@@ -153,15 +147,6 @@ Demo-користувач створюється автоматично в KV п
 - `JWT_SECRET` — обов'язково в production, інакше використовується небезпечний fallback.
 - `NODE_ENV=production` — щоб cookie стало `secure`.
 
-### Міграція з file-based (one-time)
-
-Якщо у вас лишилися дані в `db/userdata/`, перенесіть їх у KV:
-
-```bash
-npm run migrate:kv   # читає .env.local + db/, пушить у Upstash
-```
-
-Після успіху можна `git rm -r db/`.
 
 ## Скрипти
 

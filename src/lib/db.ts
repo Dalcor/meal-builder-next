@@ -429,8 +429,17 @@ async function migrateWeightLogToHash(userId: string): Promise<void> {
 
 export async function listWeightLog(userId: string): Promise<Record<string, number>> {
   await migrateWeightLogToHash(userId);
-  const obj = await kv().hgetall<Record<string, number>>(weightLogHashKey(userId));
-  return obj ?? {};
+  // @upstash/redis HGETALL returns scalar (number / boolean) hash values as
+  // strings — only object values get JSON-parsed back. Coerce here so
+  // consumers always see numbers as the type contract promises.
+  const obj = await kv().hgetall<Record<string, unknown>>(weightLogHashKey(userId));
+  if (!obj) return {};
+  const result: Record<string, number> = {};
+  for (const [date, val] of Object.entries(obj)) {
+    const n = typeof val === 'number' ? val : Number(val);
+    if (Number.isFinite(n)) result[date] = n;
+  }
+  return result;
 }
 
 export async function setWeightForDate(

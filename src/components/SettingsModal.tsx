@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { MacroTargets } from '../types';
+import DrawerHandle from './DrawerHandle';
 
 interface Props {
   macroTargets: MacroTargets;
@@ -32,17 +33,18 @@ export default function SettingsModal({ macroTargets, onSave, onCancel }: Props)
       onClick={onCancel}
     >
       <div
-        className="bg-white rounded-t-xl sm:rounded-xl shadow-xl w-full sm:w-[420px] sm:max-w-[95vw] max-h-[90vh] flex flex-col"
+        className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:w-[420px] sm:max-w-[95vw] max-h-[78svh] sm:max-h-[90vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
+        <DrawerHandle onClose={onCancel} />
         <div className="p-4 border-b flex items-center justify-between">
           <h2 className="font-semibold">Налаштування макро</h2>
           <button
             onClick={onCancel}
-            className="text-gray-400 hover:text-gray-600 p-1 -m-1"
+            className="text-gray-400 hover:text-gray-600 p-2 -m-2 rounded-lg active:bg-gray-100"
             aria-label="Закрити"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
           </button>

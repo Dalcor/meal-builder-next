@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { FoodNutrients, ProductUnit } from '../types';
+import DrawerHandle from './DrawerHandle';
 
 interface Props {
   product: FoodNutrients;
@@ -63,7 +64,9 @@ export default function PortionModal({ product, unit, initialGrams, onConfirm, o
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-t-xl sm:rounded-xl shadow-xl p-5 w-full sm:w-80 sm:max-w-[90vw]" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:w-80 sm:max-w-[90vw] max-h-[78svh] sm:max-h-none flex flex-col" onClick={e => e.stopPropagation()}>
+        <DrawerHandle onClose={onCancel} />
+        <div className="p-5 overflow-y-auto">
         <h3 className="font-semibold text-lg mb-1">{product.name}</h3>
         <p className="text-xs text-gray-500 mb-4">
           На 100г: {product.calories} ккал | Б {product.protein} | Ж {product.fat} | В {product.carbs}
@@ -151,6 +154,7 @@ export default function PortionModal({ product, unit, initialGrams, onConfirm, o
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

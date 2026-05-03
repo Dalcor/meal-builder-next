@@ -4,3 +4,16 @@ body {
   background-color: #f9fafb;
   color: #111827;
 }
+
+/* iOS Safari and Chrome on Android auto-zoom into form fields whose
+ * computed font-size is below 16px on focus. That zoom is sticky and
+ * frequently puts modal close buttons off-screen. Force at least 16px
+ * on small viewports for every text-entry control, regardless of
+ * whatever Tailwind class the markup uses. */
+@media (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

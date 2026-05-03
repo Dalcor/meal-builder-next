@@ -1,5 +1,6 @@
 import type { MealPreset, Product, Dish } from '../types';
 import { getMealItemNutrients } from '../utils/nutrients';
+import DrawerHandle from './DrawerHandle';
 
 interface Props {
   presets: MealPreset[];
@@ -12,11 +13,23 @@ interface Props {
 
 export default function CopyMealModal({ presets, products, dishes, onPaste, onDelete, onCancel }: Props) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-xl shadow-xl w-[420px] max-w-[95vw] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="p-4 border-b">
-          <h2 className="font-semibold">Збережені шаблони</h2>
-          <p className="text-xs text-gray-500 mt-1">Оберіть шаблон для вставки</p>
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50" onClick={onCancel}>
+      <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:w-[420px] sm:max-w-[95vw] max-h-[78svh] sm:max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <DrawerHandle onClose={onCancel} />
+        <div className="p-4 border-b flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="font-semibold">Збережені шаблони</h2>
+            <p className="text-xs text-gray-500 mt-1">Оберіть шаблон для вставки</p>
+          </div>
+          <button
+            onClick={onCancel}
+            className="text-gray-400 hover:text-gray-600 p-2 -m-2 rounded-lg active:bg-gray-100 flex-shrink-0"
+            aria-label="Закрити"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3">

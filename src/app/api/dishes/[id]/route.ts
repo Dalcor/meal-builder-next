@@ -24,6 +24,9 @@ function isDish(v: unknown): v is Dish {
   if (!isStr(v.id) || !isStr(v.name)) return false;
   if (!Array.isArray(v.ingredients) || !v.ingredients.every(isDishIngredient)) return false;
   if (v.fixedPortion !== undefined && !isBool(v.fixedPortion)) return false;
+  if (v.cookedWeight !== undefined) {
+    if (!isNum(v.cookedWeight) || v.cookedWeight <= 0) return false;
+  }
   return true;
 }
 

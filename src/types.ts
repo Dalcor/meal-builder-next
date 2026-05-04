@@ -30,6 +30,10 @@ export interface Dish {
   name: string;
   ingredients: DishIngredient[];
   fixedPortion?: boolean;
+  // Final weight after cooking, in grams. When set, KBJU is presented per
+  // 100g of cooked weight (water/moisture loss concentrates the macros).
+  // Absent → dish weight equals the sum of ingredient grams.
+  cookedWeight?: number;
 }
 
 export interface FoodNutrients {

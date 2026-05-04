@@ -159,14 +159,32 @@ export default function App() {
   };
 
   // --- Dishes ---
-  const handleSaveDish = (name: string, ingredients: DishIngredient[], fixedPortion: boolean) => {
+  const handleSaveDish = (
+    name: string,
+    ingredients: DishIngredient[],
+    fixedPortion: boolean,
+    cookedWeight: number | undefined,
+  ) => {
+    const base: Omit<Dish, 'id'> = { name, ingredients, fixedPortion };
+    if (cookedWeight !== undefined) base.cookedWeight = cookedWeight;
     if (editingDish) {
-      updateDish({ ...editingDish, name, ingredients, fixedPortion });
+      updateDish({ id: editingDish.id, ...base });
       setEditingDish(null);
     } else {
-      addDish({ id: generateId(), name, ingredients, fixedPortion });
+      addDish({ id: generateId(), ...base });
     }
     setShowDishConstructor(false);
+  };
+
+  // Inline product creation from inside the dish constructor. Persists
+  // through the granular addProduct so it shows up in the catalog right
+  // away; returns the product so the caller can append it as ingredient.
+  const handleAddProductFromDish = async (
+    data: Omit<Product, 'id'>,
+  ): Promise<Product | null> => {
+    const product: Product = { id: generateId(), ...data };
+    const ok = await addProduct(product);
+    return ok ? product : null;
   };
 
   const handleDeleteDish = (id: string) => {
@@ -1155,6 +1173,8 @@ export default function App() {
           products={products}
           initial={editingDish ?? undefined}
           onSave={handleSaveDish}
+          onAddProduct={handleAddProductFromDish}
+          categorySuggestions={categorySuggestions}
           onCancel={() => {
             setShowDishConstructor(false);
             setEditingDish(null);

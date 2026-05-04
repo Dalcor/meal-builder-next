@@ -22,7 +22,12 @@ export function getDishNutrients(dish: Dish, products: Product[]): FoodNutrients
     return { name: dish.name, calories: 0, protein: 0, fat: 0, carbs: 0 };
   }
 
-  const factor = 100 / totalWeight;
+  // Cooked weight (e.g. shashlik, baked goods) loses moisture but keeps
+  // the same macros, so per-100g KBJU is concentrated. Falls back to raw
+  // ingredient sum when not provided.
+  const denominatorWeight =
+    dish.cookedWeight && dish.cookedWeight > 0 ? dish.cookedWeight : totalWeight;
+  const factor = 100 / denominatorWeight;
   return {
     name: dish.name,
     calories: round(totalCal * factor),
@@ -47,6 +52,7 @@ export function getSourceNutrients(
 }
 
 export function getDishTotalWeight(dish: Dish): number {
+  if (dish.cookedWeight && dish.cookedWeight > 0) return dish.cookedWeight;
   return dish.ingredients.reduce((sum, ing) => sum + ing.grams, 0);
 }
 

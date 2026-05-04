@@ -1,21 +1,45 @@
 import { useState } from 'react';
 import type { Product, Dish, DishIngredient } from '../types';
 import DrawerHandle from './DrawerHandle';
+import ProductForm from './ProductForm';
 
 interface Props {
   products: Product[];
-  onSave: (name: string, ingredients: DishIngredient[], fixedPortion: boolean) => void;
+  onSave: (
+    name: string,
+    ingredients: DishIngredient[],
+    fixedPortion: boolean,
+    cookedWeight: number | undefined,
+  ) => void;
   onCancel: () => void;
+  // Creates a product in the catalog and returns it so we can immediately
+  // add it as an ingredient. Resolves to null when persistence failed.
+  onAddProduct: (product: Omit<Product, 'id'>) => Promise<Product | null>;
+  categorySuggestions: string[];
   initial?: Dish;
 }
 
-export default function DishConstructor({ products, onSave, onCancel, initial }: Props) {
+export default function DishConstructor({
+  products,
+  onSave,
+  onCancel,
+  onAddProduct,
+  categorySuggestions,
+  initial,
+}: Props) {
   const [name, setName] = useState(initial?.name ?? '');
   const [ingredients, setIngredients] = useState<DishIngredient[]>(
     initial?.ingredients ?? []
   );
   const [fixedPortion, setFixedPortion] = useState(initial?.fixedPortion ?? false);
+  const [hasCookedWeight, setHasCookedWeight] = useState(
+    initial?.cookedWeight !== undefined && initial.cookedWeight > 0,
+  );
+  const [cookedWeightInput, setCookedWeightInput] = useState(
+    initial?.cookedWeight ? String(initial.cookedWeight) : '',
+  );
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [showNewProductForm, setShowNewProductForm] = useState(false);
 
   const addIngredient = () => {
     if (!selectedProductId) return;
@@ -34,14 +58,34 @@ export default function DishConstructor({ products, onSave, onCancel, initial }:
     setIngredients(prev => prev.filter(i => i.productId !== productId));
   };
 
+  const handleNewProductSave = async (data: Omit<Product, 'id'>) => {
+    const created = await onAddProduct(data);
+    if (!created) return;
+    setIngredients(prev =>
+      prev.some(i => i.productId === created.id)
+        ? prev
+        : [...prev, { productId: created.id, grams: 100 }]
+    );
+    setShowNewProductForm(false);
+  };
+
+  const parsedCookedWeight = parseFloat(cookedWeightInput);
+  const cookedWeightValid = hasCookedWeight
+    ? Number.isFinite(parsedCookedWeight) && parsedCookedWeight > 0
+    : true;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || ingredients.length === 0) return;
-    onSave(name.trim(), ingredients, fixedPortion);
+    if (!cookedWeightValid) return;
+    const cookedWeight = hasCookedWeight ? parsedCookedWeight : undefined;
+    onSave(name.trim(), ingredients, fixedPortion, cookedWeight);
   };
 
-  // Calculate totals
-  let totalWeight = 0;
+  // Calculate totals (raw — sum of ingredient grams). When the dish
+  // declares a cooked weight, that becomes the denominator for per-100g
+  // and the practical "weight of the dish" the user sees.
+  let rawWeight = 0;
   let totalCal = 0;
   let totalProt = 0;
   let totalFat = 0;
@@ -50,19 +94,22 @@ export default function DishConstructor({ products, onSave, onCancel, initial }:
     const p = products.find(pr => pr.id === ing.productId);
     if (!p) continue;
     const ratio = ing.grams / 100;
-    totalWeight += ing.grams;
+    rawWeight += ing.grams;
     totalCal += p.calories * ratio;
     totalProt += p.protein * ratio;
     totalFat += p.fat * ratio;
     totalCarbs += p.carbs * ratio;
   }
 
-  const per100 = totalWeight > 0
+  const effectiveWeight =
+    hasCookedWeight && parsedCookedWeight > 0 ? parsedCookedWeight : rawWeight;
+
+  const per100 = effectiveWeight > 0
     ? {
-        cal: (totalCal / totalWeight) * 100,
-        prot: (totalProt / totalWeight) * 100,
-        fat: (totalFat / totalWeight) * 100,
-        carbs: (totalCarbs / totalWeight) * 100,
+        cal: (totalCal / effectiveWeight) * 100,
+        prot: (totalProt / effectiveWeight) * 100,
+        fat: (totalFat / effectiveWeight) * 100,
+        carbs: (totalCarbs / effectiveWeight) * 100,
       }
     : { cal: 0, prot: 0, fat: 0, carbs: 0 };
 
@@ -100,28 +147,37 @@ export default function DishConstructor({ products, onSave, onCancel, initial }:
           />
 
           {/* Add ingredient */}
-          <div className="flex gap-2">
-            <select
-              value={selectedProductId}
-              onChange={e => setSelectedProductId(e.target.value)}
-              className="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            >
-              <option value="">Оберіть продукт...</option>
-              {products
-                .filter(p => !ingredients.some(i => i.productId === p.id))
-                .map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-            </select>
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <select
+                value={selectedProductId}
+                onChange={e => setSelectedProductId(e.target.value)}
+                className="flex-1 min-w-0 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              >
+                <option value="">Оберіть продукт...</option>
+                {products
+                  .filter(p => !ingredients.some(i => i.productId === p.id))
+                  .map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>
+              <button
+                type="button"
+                onClick={addIngredient}
+                disabled={!selectedProductId}
+                className="px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                + Додати
+              </button>
+            </div>
             <button
               type="button"
-              onClick={addIngredient}
-              disabled={!selectedProductId}
-              className="px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              onClick={() => setShowNewProductForm(true)}
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
             >
-              + Додати
+              + Створити новий продукт
             </button>
           </div>
 
@@ -175,11 +231,47 @@ export default function DishConstructor({ products, onSave, onCancel, initial }:
             </div>
           )}
 
+          {/* Cooked weight */}
+          {ingredients.length > 0 && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={hasCookedWeight}
+                  onChange={e => setHasCookedWeight(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
+                />
+                <span className="text-sm text-gray-700">
+                  Страва змінює вагу при приготуванні
+                </span>
+              </label>
+              {hasCookedWeight && (
+                <div className="pl-6 border-l-2 border-blue-100 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={cookedWeightInput}
+                      onChange={e => setCookedWeightInput(e.target.value)}
+                      placeholder="Вага після приготування"
+                      className="flex-1 px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      min="0.001"
+                      step="any"
+                    />
+                    <span className="text-xs text-gray-500">г</span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Сировина: {rawWeight}г. КБЖУ перерахується на 100г готової страви.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Totals */}
           {ingredients.length > 0 && (
             <div className="bg-blue-50 rounded-lg p-3">
               <div className="text-xs text-gray-500 font-medium mb-2">
-                Загалом ({totalWeight}г) / На 100г
+                Загалом ({effectiveWeight}г{hasCookedWeight && parsedCookedWeight > 0 ? ' готової' : ''}) / На 100г
               </div>
               <div className="grid grid-cols-4 gap-2 text-center text-sm">
                 <div>
@@ -211,7 +303,7 @@ export default function DishConstructor({ products, onSave, onCancel, initial }:
                 className="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
               />
               <span className="text-sm text-gray-600">
-                Фіксована порція ({totalWeight}г)
+                Фіксована порція ({effectiveWeight}г)
               </span>
               <span className="text-xs text-gray-400">
                 — додавати без запиту грамів
@@ -222,7 +314,7 @@ export default function DishConstructor({ products, onSave, onCancel, initial }:
           <div className="flex gap-2 pt-2">
             <button
               type="submit"
-              disabled={!name.trim() || ingredients.length === 0}
+              disabled={!name.trim() || ingredients.length === 0 || !cookedWeightValid}
               className="flex-1 bg-blue-500 text-white py-2 rounded-lg font-medium hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {initial ? 'Зберегти' : 'Створити страву'}
@@ -237,6 +329,41 @@ export default function DishConstructor({ products, onSave, onCancel, initial }:
           </div>
         </form>
       </div>
+
+      {/* Inline product creation modal — nested above the dish constructor */}
+      {showNewProductForm && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-[60]"
+          onClick={() => setShowNewProductForm(false)}
+        >
+          <div
+            className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:w-[420px] sm:max-w-[95vw] max-h-[78svh] sm:max-h-[90vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <DrawerHandle onClose={() => setShowNewProductForm(false)} />
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="font-semibold">Новий продукт</h3>
+              <button
+                type="button"
+                onClick={() => setShowNewProductForm(false)}
+                className="text-gray-400 hover:text-gray-600 p-2 -m-2 rounded-lg active:bg-gray-100"
+                aria-label="Закрити"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto">
+              <ProductForm
+                onSave={handleNewProductSave}
+                onCancel={() => setShowNewProductForm(false)}
+                categorySuggestions={categorySuggestions}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

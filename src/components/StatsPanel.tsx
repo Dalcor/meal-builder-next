@@ -24,24 +24,62 @@ interface Props {
 }
 
 const MONTHS_SHORT = ['січ', 'лют', 'бер', 'кві', 'тра', 'чер', 'лип', 'сер', 'вер', 'жов', 'лис', 'гру'];
+const WEEKDAYS_SHORT = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function toDateKey(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function shiftDateKey(dateKey: string, days: number): string {
+  const d = new Date(dateKey + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return toDateKey(d);
+}
+
+// Week starts on Tuesday. Returns the YYYY-MM-DD of the Tuesday on/before dateKey.
+function getWeekStart(dateKey: string): string {
+  const d = new Date(dateKey + 'T00:00:00');
+  const day = d.getDay();
+  const offset = -((day - 2 + 7) % 7);
+  d.setDate(d.getDate() + offset);
+  return toDateKey(d);
+}
+
+function getWeekDays(weekStart: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < 7; i++) out.push(shiftDateKey(weekStart, i));
+  return out;
+}
 
 function formatShortDate(dateKey: string): string {
   const d = new Date(dateKey + 'T00:00:00');
   return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
 }
 
-function getLast30Days(today: string): string[] {
-  const days: string[] = [];
-  const d = new Date(today + 'T00:00:00');
-  for (let i = 29; i >= 0; i--) {
-    const dd = new Date(d);
-    dd.setDate(dd.getDate() - i);
-    const y = dd.getFullYear();
-    const m = String(dd.getMonth() + 1).padStart(2, '0');
-    const day = String(dd.getDate()).padStart(2, '0');
-    days.push(`${y}-${m}-${day}`);
+function formatDayLabel(dateKey: string): string {
+  const d = new Date(dateKey + 'T00:00:00');
+  return `${WEEKDAYS_SHORT[d.getDay()]} ${d.getDate()}`;
+}
+
+function formatTooltipDate(dateKey: string): string {
+  const d = new Date(dateKey + 'T00:00:00');
+  return `${WEEKDAYS_SHORT[d.getDay()]}, ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
+}
+
+function formatWeekRange(weekStart: string): string {
+  const start = new Date(weekStart + 'T00:00:00');
+  const end = new Date(weekStart + 'T00:00:00');
+  end.setDate(end.getDate() + 6);
+  const sM = MONTHS_SHORT[start.getMonth()];
+  const eM = MONTHS_SHORT[end.getMonth()];
+  if (start.getMonth() === end.getMonth()) {
+    return `${start.getDate()}–${end.getDate()} ${sM}`;
   }
-  return days;
+  return `${start.getDate()} ${sM} – ${end.getDate()} ${eM}`;
 }
 
 interface ChartDatum {
@@ -84,7 +122,7 @@ function CustomTooltip({
   if (item.value == null) return null;
   return (
     <div className="bg-white shadow-lg border rounded-lg px-3 py-2 text-xs">
-      <div className="font-medium text-gray-700">{item.payload.label}</div>
+      <div className="font-medium text-gray-700">{formatTooltipDate(item.payload.date)}</div>
       <div className="text-gray-500">
         {typeof item.value === 'number' ? item.value.toFixed(1) : ''} {unit}
       </div>
@@ -103,22 +141,28 @@ export default function StatsPanel({
   onClose,
 }: Props) {
   const [weightInput, setWeightInput] = useState(weightLog[selectedDate]?.toString() ?? '');
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(selectedDate));
 
-  // Reset weight input when the selected date changes (React-recommended
-  // "adjusting state on prop change" pattern: store previous value as state).
+  // Reset weight input and week anchor when the selected date changes
+  // (React-recommended "adjusting state on prop change" pattern).
   const [prevDate, setPrevDate] = useState(selectedDate);
   if (prevDate !== selectedDate) {
     setPrevDate(selectedDate);
     setWeightInput(weightLog[selectedDate]?.toString() ?? '');
+    setWeekStart(getWeekStart(selectedDate));
   }
 
-  const days = useMemo(() => getLast30Days(selectedDate), [selectedDate]);
+  const todayWeekStart = useMemo(() => getWeekStart(toDateKey(new Date())), []);
+  const isCurrentWeek = weekStart === todayWeekStart;
+  const isFutureWeek = weekStart > todayWeekStart;
+
+  const days = useMemo(() => getWeekDays(weekStart), [weekStart]);
 
   const weightSeries = useMemo<ChartDatum[]>(
     () =>
       days.map(d => ({
         date: d,
-        label: formatShortDate(d),
+        label: formatDayLabel(d),
         value: weightLog[d] ?? null,
       })),
     [days, weightLog]
@@ -129,7 +173,7 @@ export default function StatsPanel({
       days.map(d => {
         const meals = dailyMeals[d];
         const done = mealsDone[d];
-        if (!meals) return { date: d, label: formatShortDate(d), value: null };
+        if (!meals) return { date: d, label: formatDayLabel(d), value: null };
 
         let total = 0;
         let hasAny = false;
@@ -141,7 +185,7 @@ export default function StatsPanel({
             if (n) total += (n.calories * item.grams) / 100;
           }
         }
-        return { date: d, label: formatShortDate(d), value: hasAny ? total : null };
+        return { date: d, label: formatDayLabel(d), value: hasAny ? total : null };
       }),
     [days, dailyMeals, mealsDone, products, dishes]
   );
@@ -186,10 +230,9 @@ export default function StatsPanel({
     onWeightChange(selectedDate, val > 0 ? val : null);
   };
 
-  const xTicks = useMemo(() => {
-    const step = Math.max(1, Math.floor(days.length / 6));
-    return days.filter((_, i) => i % step === 0);
-  }, [days]);
+  const goPrevWeek = () => setWeekStart(shiftDateKey(weekStart, -7));
+  const goNextWeek = () => setWeekStart(shiftDateKey(weekStart, 7));
+  const goCurrentWeek = () => setWeekStart(todayWeekStart);
 
   return (
     <div
@@ -222,7 +265,46 @@ export default function StatsPanel({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
+          {/* Week switcher */}
+          <div className="flex items-center justify-between gap-2 bg-gray-50 border rounded-lg px-2 py-2">
+            <button
+              onClick={goPrevWeek}
+              className="px-3 py-1.5 rounded-md text-gray-600 hover:bg-gray-200 active:bg-gray-300"
+              aria-label="Попередній тиждень"
+            >
+              ←
+            </button>
+            <div className="flex flex-col items-center text-center flex-1 min-w-0">
+              <span className="text-sm font-semibold text-gray-800 truncate">
+                {formatWeekRange(weekStart)}
+              </span>
+              <span className="text-[11px] text-gray-500">
+                {isCurrentWeek
+                  ? 'поточний тиждень'
+                  : isFutureWeek
+                  ? 'майбутній тиждень'
+                  : 'минулий тиждень'}
+                {!isCurrentWeek && (
+                  <>
+                    {' · '}
+                    <button onClick={goCurrentWeek} className="text-blue-600 hover:underline">
+                      до поточного
+                    </button>
+                  </>
+                )}
+              </span>
+            </div>
+            <button
+              onClick={goNextWeek}
+              disabled={isCurrentWeek || isFutureWeek}
+              className="px-3 py-1.5 rounded-md text-gray-600 hover:bg-gray-200 active:bg-gray-300 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              aria-label="Наступний тиждень"
+            >
+              →
+            </button>
+          </div>
+
           {/* Weight input */}
           <div className="flex flex-wrap items-center gap-3 bg-blue-50/50 border border-blue-100 rounded-lg px-4 py-3">
             <span className="text-sm font-medium text-gray-700">
@@ -256,16 +338,18 @@ export default function StatsPanel({
           {/* Weight chart */}
           <section>
             <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
-              <h3 className="text-base font-semibold text-gray-800">Вага · 30 днів</h3>
+              <h3 className="text-base font-semibold text-gray-800">Вага · за тиждень</h3>
               {weightStats && (
                 <div className="flex gap-3 text-xs text-gray-600">
                   <span>
                     зараз <strong className="text-gray-800">{weightStats.last.toFixed(1)} кг</strong>
                   </span>
-                  <span className={weightStats.delta >= 0 ? 'text-orange-600' : 'text-emerald-600'}>
-                    Δ {weightStats.delta >= 0 ? '+' : ''}
-                    {weightStats.delta.toFixed(1)} кг
-                  </span>
+                  {weightStats.count >= 2 && (
+                    <span className={weightStats.delta >= 0 ? 'text-orange-600' : 'text-emerald-600'}>
+                      Δ {weightStats.delta >= 0 ? '+' : ''}
+                      {weightStats.delta.toFixed(1)} кг
+                    </span>
+                  )}
                   <span className="hidden sm:inline">
                     мін {weightStats.min.toFixed(1)} / макс {weightStats.max.toFixed(1)}
                   </span>
@@ -273,7 +357,7 @@ export default function StatsPanel({
               )}
             </div>
             <div className="rounded-lg border bg-white px-2 py-3 sm:px-4">
-              <ResponsiveContainer width="100%" height={320}>
+              <ResponsiveContainer width="100%" height={260}>
                 <ComposedChart data={weightSeries} margin={{ top: 8, right: 12, bottom: 4, left: 0 }}>
                   <defs>
                     <linearGradient id="weightFill" x1="0" y1="0" x2="0" y2="1">
@@ -284,8 +368,8 @@ export default function StatsPanel({
                   <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
                   <XAxis
                     dataKey="date"
-                    ticks={xTicks}
-                    tickFormatter={formatShortDate}
+                    ticks={days}
+                    tickFormatter={formatDayLabel}
                     tick={{ fontSize: 11, fill: '#94a3b8' }}
                     stroke="#cbd5e1"
                     interval={0}
@@ -319,8 +403,8 @@ export default function StatsPanel({
                 </ComposedChart>
               </ResponsiveContainer>
               {weightStats == null && (
-                <p className="text-center text-sm text-gray-400 -mt-44 mb-44">
-                  Немає даних — введіть вагу для будь-якого дня
+                <p className="text-center text-sm text-gray-400 -mt-36 mb-36">
+                  Немає даних — введіть вагу для будь-якого дня тижня
                 </p>
               )}
             </div>
@@ -330,7 +414,7 @@ export default function StatsPanel({
           <section>
             <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
               <div>
-                <h3 className="text-base font-semibold text-gray-800">Спожиті калорії · 30 днів</h3>
+                <h3 className="text-base font-semibold text-gray-800">Спожиті калорії · за тиждень</h3>
                 <p className="text-xs text-gray-400">На основі відмічених прийомів їжі</p>
               </div>
               {calorieStats && (
@@ -346,7 +430,7 @@ export default function StatsPanel({
               )}
             </div>
             <div className="rounded-lg border bg-white px-2 py-3 sm:px-4">
-              <ResponsiveContainer width="100%" height={320}>
+              <ResponsiveContainer width="100%" height={260}>
                 <ComposedChart data={calorieSeries} margin={{ top: 8, right: 12, bottom: 4, left: 0 }}>
                   <defs>
                     <linearGradient id="calFill" x1="0" y1="0" x2="0" y2="1">
@@ -357,8 +441,8 @@ export default function StatsPanel({
                   <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
                   <XAxis
                     dataKey="date"
-                    ticks={xTicks}
-                    tickFormatter={formatShortDate}
+                    ticks={days}
+                    tickFormatter={formatDayLabel}
                     tick={{ fontSize: 11, fill: '#94a3b8' }}
                     stroke="#cbd5e1"
                     interval={0}
@@ -392,7 +476,7 @@ export default function StatsPanel({
                 </ComposedChart>
               </ResponsiveContainer>
               {calorieStats == null && (
-                <p className="text-center text-sm text-gray-400 -mt-44 mb-44">
+                <p className="text-center text-sm text-gray-400 -mt-36 mb-36">
                   Немає відмічених прийомів їжі
                 </p>
               )}

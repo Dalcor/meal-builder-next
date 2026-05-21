@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Product, Dish, DishIngredient } from '../types';
 import DrawerHandle from './DrawerHandle';
 import ProductForm from './ProductForm';
+import ProductPicker from './ProductPicker';
 
 interface Props {
   products: Product[];
@@ -38,14 +39,11 @@ export default function DishConstructor({
   const [cookedWeightInput, setCookedWeightInput] = useState(
     initial?.cookedWeight ? String(initial.cookedWeight) : '',
   );
-  const [selectedProductId, setSelectedProductId] = useState('');
   const [showNewProductForm, setShowNewProductForm] = useState(false);
 
-  const addIngredient = () => {
-    if (!selectedProductId) return;
-    if (ingredients.some(i => i.productId === selectedProductId)) return;
-    setIngredients(prev => [...prev, { productId: selectedProductId, grams: 100 }]);
-    setSelectedProductId('');
+  const addIngredient = (productId: string) => {
+    if (ingredients.some(i => i.productId === productId)) return;
+    setIngredients(prev => [...prev, { productId, grams: 100 }]);
   };
 
   const updateGrams = (productId: string, grams: number) => {
@@ -148,30 +146,16 @@ export default function DishConstructor({
 
           {/* Add ingredient */}
           <div className="space-y-2">
-            <div className="flex gap-2">
-              <select
-                value={selectedProductId}
-                onChange={e => setSelectedProductId(e.target.value)}
-                className="flex-1 min-w-0 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              >
-                <option value="">Оберіть продукт...</option>
-                {products
-                  .filter(p => !ingredients.some(i => i.productId === p.id))
-                  .map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-              </select>
-              <button
-                type="button"
-                onClick={addIngredient}
-                disabled={!selectedProductId}
-                className="px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                + Додати
-              </button>
+            <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">
+              Додати інгредієнт
             </div>
+            <ProductPicker
+              products={products}
+              excludedIds={ingredients.map(i => i.productId)}
+              onPick={addIngredient}
+              listClassName="max-h-56"
+              emptyText="Всі продукти вже в страві"
+            />
             <button
               type="button"
               onClick={() => setShowNewProductForm(true)}

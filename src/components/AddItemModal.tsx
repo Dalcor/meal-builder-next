@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Product, Dish, MealType } from '../types';
 import { getDishNutrients, getDishTotalWeight } from '../utils/nutrients';
 import DrawerHandle from './DrawerHandle';
+import ProductPicker from './ProductPicker';
 
 interface Props {
   mealType: MealType;
@@ -24,27 +25,14 @@ export default function AddItemModal({
   onCancel,
 }: Props) {
   const [tab, setTab] = useState<Tab>('product');
-  const [search, setSearch] = useState('');
-  const query = search.toLowerCase().trim();
-
-  const filteredProducts = useMemo(() => {
-    const list = query
-      ? products.filter(p => p.name.toLowerCase().includes(query))
-      : products;
-    return [...list].sort((a, b) => {
-      const ap = pinnedIds.includes(a.id);
-      const bp = pinnedIds.includes(b.id);
-      if (ap && !bp) return -1;
-      if (!ap && bp) return 1;
-      return 0;
-    });
-  }, [products, query, pinnedIds]);
+  const [dishSearch, setDishSearch] = useState('');
+  const dishQuery = dishSearch.toLowerCase().trim();
 
   const filteredDishes = useMemo(() => {
-    return query
-      ? dishes.filter(d => d.name.toLowerCase().includes(query))
+    return dishQuery
+      ? dishes.filter(d => d.name.toLowerCase().includes(dishQuery))
       : dishes;
-  }, [dishes, query]);
+  }, [dishes, dishQuery]);
 
   return (
     <div
@@ -97,83 +85,61 @@ export default function AddItemModal({
           </button>
         </div>
 
-        <div className="p-3 border-b">
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Пошук..."
-            className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            autoFocus
-          />
-        </div>
+        {tab === 'product' && (
+          <div className="flex-1 min-h-0 p-3 flex flex-col">
+            <ProductPicker
+              products={products}
+              pinnedIds={pinnedIds}
+              onPick={id => onPick('product', id)}
+              autoFocus
+              listClassName="flex-1 min-h-0"
+              emptyText="Немає продуктів. Додайте з каталогу або вручну."
+            />
+          </div>
+        )}
 
-        <div className="flex-1 overflow-y-auto p-2">
-          {tab === 'product' && (
-            filteredProducts.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">
-                {products.length === 0
-                  ? 'Немає продуктів. Додайте з каталогу або вручну.'
-                  : 'Нічого не знайдено'}
-              </p>
-            ) : (
-              <div className="space-y-1">
-                {filteredProducts.map(p => {
-                  const pinned = pinnedIds.includes(p.id);
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => onPick('product', p.id)}
-                      className={`w-full text-left px-3 py-3 rounded-lg active:bg-gray-100 hover:bg-gray-50 border border-transparent hover:border-gray-200 transition-colors ${
-                        pinned ? 'border-l-2 border-l-amber-400' : ''
-                      }`}
-                    >
-                      <div className="font-medium text-sm">{p.name}</div>
-                      <div className="text-xs text-gray-500">
-                        {p.calories} ккал | Б {p.protein} | Ж {p.fat} | В {p.carbs}
-                        {p.unit && (
-                          <span className="text-amber-600">
-                            {' · 1 '}{p.unit.label ?? 'шт'} = {p.unit.gramsPerUnit}г
-                            {p.fixedPortion ? ' (фікс.)' : ''}
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )
-          )}
-
-          {tab === 'dish' && (
-            filteredDishes.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">
-                {dishes.length === 0
-                  ? 'Немає страв. Створіть першу зі своїх продуктів.'
-                  : 'Нічого не знайдено'}
-              </p>
-            ) : (
-              <div className="space-y-1">
-                {filteredDishes.map(d => {
-                  const dn = getDishNutrients(d, products);
-                  const tw = getDishTotalWeight(d);
-                  return (
-                    <button
-                      key={d.id}
-                      onClick={() => onPick('dish', d.id)}
-                      className="w-full text-left px-3 py-3 rounded-lg active:bg-gray-100 hover:bg-gray-50 border border-transparent hover:border-gray-200 transition-colors border-l-2 border-l-purple-400"
-                    >
-                      <div className="font-medium text-sm">{d.name}</div>
-                      <div className="text-xs text-gray-500">
-                        {dn.calories} ккал/100г | Б {dn.protein} | Ж {dn.fat} | В {dn.carbs} | {tw}г порція{d.fixedPortion ? ' (фікс.)' : ''}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )
-          )}
-        </div>
+        {tab === 'dish' && (
+          <>
+            <div className="p-3 border-b">
+              <input
+                type="text"
+                value={dishSearch}
+                onChange={e => setDishSearch(e.target.value)}
+                placeholder="Пошук страви..."
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                autoFocus
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {filteredDishes.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">
+                  {dishes.length === 0
+                    ? 'Немає страв. Створіть першу зі своїх продуктів.'
+                    : 'Нічого не знайдено'}
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {filteredDishes.map(d => {
+                    const dn = getDishNutrients(d, products);
+                    const tw = getDishTotalWeight(d);
+                    return (
+                      <button
+                        key={d.id}
+                        onClick={() => onPick('dish', d.id)}
+                        className="w-full text-left px-3 py-3 rounded-lg active:bg-gray-100 hover:bg-gray-50 border border-transparent hover:border-gray-200 transition-colors border-l-2 border-l-purple-400"
+                      >
+                        <div className="font-medium text-sm">{d.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {dn.calories} ккал/100г | Б {dn.protein} | Ж {dn.fat} | В {dn.carbs} | {tw}г порція{d.fixedPortion ? ' (фікс.)' : ''}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

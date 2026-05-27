@@ -24,7 +24,13 @@ interface Props {
 }
 
 const MONTHS_SHORT = ['січ', 'лют', 'бер', 'кві', 'тра', 'чер', 'лип', 'сер', 'вер', 'жов', 'лис', 'гру'];
+const MONTHS_FULL = [
+  'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
+  'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень',
+];
 const WEEKDAYS_SHORT = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+
+type ViewMode = 'week' | 'month';
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -49,10 +55,35 @@ function getWeekStart(dateKey: string): string {
   return toDateKey(d);
 }
 
-function getWeekDays(weekStart: string): string[] {
+function getMonthStart(dateKey: string): string {
+  const d = new Date(dateKey + 'T00:00:00');
+  d.setDate(1);
+  return toDateKey(d);
+}
+
+function getWindowStart(dateKey: string, mode: ViewMode): string {
+  return mode === 'week' ? getWeekStart(dateKey) : getMonthStart(dateKey);
+}
+
+function getWindowDays(windowStart: string, mode: ViewMode): string[] {
+  if (mode === 'week') {
+    const out: string[] = [];
+    for (let i = 0; i < 7; i++) out.push(shiftDateKey(windowStart, i));
+    return out;
+  }
+  const d = new Date(windowStart + 'T00:00:00');
+  const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
   const out: string[] = [];
-  for (let i = 0; i < 7; i++) out.push(shiftDateKey(weekStart, i));
+  for (let i = 0; i < daysInMonth; i++) out.push(shiftDateKey(windowStart, i));
   return out;
+}
+
+function shiftWindow(windowStart: string, mode: ViewMode, direction: -1 | 1): string {
+  if (mode === 'week') return shiftDateKey(windowStart, direction * 7);
+  const d = new Date(windowStart + 'T00:00:00');
+  d.setMonth(d.getMonth() + direction);
+  d.setDate(1);
+  return toDateKey(d);
 }
 
 function formatShortDate(dateKey: string): string {
@@ -65,14 +96,23 @@ function formatDayLabel(dateKey: string): string {
   return `${WEEKDAYS_SHORT[d.getDay()]} ${d.getDate()}`;
 }
 
+function formatDayNumber(dateKey: string): string {
+  const d = new Date(dateKey + 'T00:00:00');
+  return String(d.getDate());
+}
+
 function formatTooltipDate(dateKey: string): string {
   const d = new Date(dateKey + 'T00:00:00');
   return `${WEEKDAYS_SHORT[d.getDay()]}, ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
 }
 
-function formatWeekRange(weekStart: string): string {
-  const start = new Date(weekStart + 'T00:00:00');
-  const end = new Date(weekStart + 'T00:00:00');
+function formatWindowRange(windowStart: string, mode: ViewMode): string {
+  if (mode === 'month') {
+    const d = new Date(windowStart + 'T00:00:00');
+    return `${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`;
+  }
+  const start = new Date(windowStart + 'T00:00:00');
+  const end = new Date(windowStart + 'T00:00:00');
   end.setDate(end.getDate() + 6);
   const sM = MONTHS_SHORT[start.getMonth()];
   const eM = MONTHS_SHORT[end.getMonth()];
@@ -80,6 +120,18 @@ function formatWeekRange(weekStart: string): string {
     return `${start.getDate()}–${end.getDate()} ${sM}`;
   }
   return `${start.getDate()} ${sM} – ${end.getDate()} ${eM}`;
+}
+
+// Last weigh-in strictly before the given date, or null if none exists.
+function getLastWeighInBefore(
+  weightLog: Record<string, number>,
+  dateKey: string
+): { date: string; value: number } | null {
+  let bestDate: string | null = null;
+  for (const d in weightLog) {
+    if (d < dateKey && (bestDate === null || d > bestDate)) bestDate = d;
+  }
+  return bestDate === null ? null : { date: bestDate, value: weightLog[bestDate] };
 }
 
 interface ChartDatum {
@@ -141,22 +193,26 @@ export default function StatsPanel({
   onClose,
 }: Props) {
   const [weightInput, setWeightInput] = useState(weightLog[selectedDate]?.toString() ?? '');
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(selectedDate));
+  const [viewMode, setViewMode] = useState<ViewMode>('week');
+  const [windowStart, setWindowStart] = useState(() => getWindowStart(selectedDate, 'week'));
 
-  // Reset weight input and week anchor when the selected date changes
+  // Reset weight input and window anchor when the selected date changes
   // (React-recommended "adjusting state on prop change" pattern).
   const [prevDate, setPrevDate] = useState(selectedDate);
   if (prevDate !== selectedDate) {
     setPrevDate(selectedDate);
     setWeightInput(weightLog[selectedDate]?.toString() ?? '');
-    setWeekStart(getWeekStart(selectedDate));
+    setWindowStart(getWindowStart(selectedDate, viewMode));
   }
 
-  const todayWeekStart = useMemo(() => getWeekStart(toDateKey(new Date())), []);
-  const isCurrentWeek = weekStart === todayWeekStart;
-  const isFutureWeek = weekStart > todayWeekStart;
+  const todayWindowStart = useMemo(
+    () => getWindowStart(toDateKey(new Date()), viewMode),
+    [viewMode]
+  );
+  const isCurrentWindow = windowStart === todayWindowStart;
+  const isFutureWindow = windowStart > todayWindowStart;
 
-  const days = useMemo(() => getWeekDays(weekStart), [weekStart]);
+  const days = useMemo(() => getWindowDays(windowStart, viewMode), [windowStart, viewMode]);
 
   const weightSeries = useMemo<ChartDatum[]>(
     () =>
@@ -208,15 +264,34 @@ export default function StatsPanel({
     [calorieSeries]
   );
 
+  // Baseline for Δ is the most recent weigh-in *before* this window — so the day
+  // between consecutive windows (e.g. Mon → Tue across week boundaries) is no
+  // longer lost. Falls back to the first weigh-in within the window if none exists.
   const weightStats = useMemo(() => {
-    const values = weightSeries.map(p => p.value).filter((v): v is number => v != null);
-    if (values.length === 0) return null;
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const last = values[values.length - 1];
-    const first = values[0];
-    return { min, max, last, delta: last - first, count: values.length };
-  }, [weightSeries]);
+    const inWindow = weightSeries
+      .map(p => p.value)
+      .filter((v): v is number => v != null);
+    if (inWindow.length === 0) return null;
+
+    const min = Math.min(...inWindow);
+    const max = Math.max(...inWindow);
+    const last = inWindow[inWindow.length - 1];
+    const prior = getLastWeighInBefore(weightLog, windowStart);
+    const baseline = prior?.value ?? inWindow[0];
+    const baselineFromPrior = prior !== null;
+    // If there is no prior baseline and only one measurement in window, Δ is undefined.
+    const hasDelta = baselineFromPrior || inWindow.length >= 2;
+
+    return {
+      min,
+      max,
+      last,
+      delta: last - baseline,
+      hasDelta,
+      baselineFromPrior,
+      count: inWindow.length,
+    };
+  }, [weightSeries, weightLog, windowStart]);
 
   const calorieStats = useMemo(() => {
     const values = calorieSeries.map(p => p.value).filter((v): v is number => v != null);
@@ -225,14 +300,42 @@ export default function StatsPanel({
     return { avg: sum / values.length, max: Math.max(...values), days: values.length };
   }, [calorieSeries]);
 
+  // For week view, every day gets a tick. For month, label every ~5 days plus the last day.
+  const axisTicks = useMemo(() => {
+    if (viewMode === 'week') return days;
+    const picked: string[] = [];
+    for (let i = 0; i < days.length; i += 5) picked.push(days[i]);
+    const last = days[days.length - 1];
+    if (picked[picked.length - 1] !== last) picked.push(last);
+    return picked;
+  }, [days, viewMode]);
+
+  const axisTickFormatter = viewMode === 'week' ? formatDayLabel : formatDayNumber;
+
   const saveWeight = () => {
     const val = parseFloat(weightInput);
     onWeightChange(selectedDate, val > 0 ? val : null);
   };
 
-  const goPrevWeek = () => setWeekStart(shiftDateKey(weekStart, -7));
-  const goNextWeek = () => setWeekStart(shiftDateKey(weekStart, 7));
-  const goCurrentWeek = () => setWeekStart(todayWeekStart);
+  const goPrev = () => setWindowStart(shiftWindow(windowStart, viewMode, -1));
+  const goNext = () => setWindowStart(shiftWindow(windowStart, viewMode, 1));
+  const goCurrent = () => setWindowStart(todayWindowStart);
+
+  const switchMode = (mode: ViewMode) => {
+    if (mode === viewMode) return;
+    setViewMode(mode);
+    setWindowStart(getWindowStart(selectedDate, mode));
+  };
+
+  const periodLabel = viewMode === 'week' ? 'за тиждень' : 'за місяць';
+  const currentLabel = viewMode === 'week' ? 'поточний тиждень' : 'поточний місяць';
+  const futureLabel = viewMode === 'week' ? 'майбутній тиждень' : 'майбутній місяць';
+  const pastLabel = viewMode === 'week' ? 'минулий тиждень' : 'минулий місяць';
+  const prevAria = viewMode === 'week' ? 'Попередній тиждень' : 'Попередній місяць';
+  const nextAria = viewMode === 'week' ? 'Наступний тиждень' : 'Наступний місяць';
+  const emptyWeightHint = viewMode === 'week'
+    ? 'Немає даних — введіть вагу для будь-якого дня тижня'
+    : 'Немає даних — введіть вагу для будь-якого дня місяця';
 
   return (
     <div
@@ -252,8 +355,32 @@ export default function StatsPanel({
           <span className="block w-10 h-1.5 bg-gray-300 rounded-full" />
         </button>
 
-        <div className="p-4 border-b flex items-center justify-between">
-          <h2 className="font-semibold text-lg">Статистика</h2>
+        <div className="p-4 border-b flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <h2 className="font-semibold text-lg">Статистика</h2>
+            <div className="flex border rounded-lg overflow-hidden text-xs shrink-0">
+              <button
+                onClick={() => switchMode('week')}
+                className={`px-3 py-1 transition-colors ${
+                  viewMode === 'week'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Тиждень
+              </button>
+              <button
+                onClick={() => switchMode('month')}
+                className={`px-3 py-1 transition-colors ${
+                  viewMode === 'month'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Місяць
+              </button>
+            </div>
+          </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-2 -m-2 rounded-lg active:bg-gray-100"
@@ -266,29 +393,29 @@ export default function StatsPanel({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
-          {/* Week switcher */}
+          {/* Window switcher */}
           <div className="flex items-center justify-between gap-2 bg-gray-50 border rounded-lg px-2 py-2">
             <button
-              onClick={goPrevWeek}
+              onClick={goPrev}
               className="px-3 py-1.5 rounded-md text-gray-600 hover:bg-gray-200 active:bg-gray-300"
-              aria-label="Попередній тиждень"
+              aria-label={prevAria}
             >
               ←
             </button>
             <div className="flex flex-col items-center text-center flex-1 min-w-0">
               <span className="text-sm font-semibold text-gray-800 truncate">
-                {formatWeekRange(weekStart)}
+                {formatWindowRange(windowStart, viewMode)}
               </span>
               <span className="text-[11px] text-gray-500">
-                {isCurrentWeek
-                  ? 'поточний тиждень'
-                  : isFutureWeek
-                  ? 'майбутній тиждень'
-                  : 'минулий тиждень'}
-                {!isCurrentWeek && (
+                {isCurrentWindow
+                  ? currentLabel
+                  : isFutureWindow
+                  ? futureLabel
+                  : pastLabel}
+                {!isCurrentWindow && (
                   <>
                     {' · '}
-                    <button onClick={goCurrentWeek} className="text-blue-600 hover:underline">
+                    <button onClick={goCurrent} className="text-blue-600 hover:underline">
                       до поточного
                     </button>
                   </>
@@ -296,10 +423,10 @@ export default function StatsPanel({
               </span>
             </div>
             <button
-              onClick={goNextWeek}
-              disabled={isCurrentWeek || isFutureWeek}
+              onClick={goNext}
+              disabled={isCurrentWindow || isFutureWindow}
               className="px-3 py-1.5 rounded-md text-gray-600 hover:bg-gray-200 active:bg-gray-300 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-              aria-label="Наступний тиждень"
+              aria-label={nextAria}
             >
               →
             </button>
@@ -338,14 +465,21 @@ export default function StatsPanel({
           {/* Weight chart */}
           <section>
             <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
-              <h3 className="text-base font-semibold text-gray-800">Вага · за тиждень</h3>
+              <h3 className="text-base font-semibold text-gray-800">Вага · {periodLabel}</h3>
               {weightStats && (
                 <div className="flex gap-3 text-xs text-gray-600">
                   <span>
                     зараз <strong className="text-gray-800">{weightStats.last.toFixed(1)} кг</strong>
                   </span>
-                  {weightStats.count >= 2 && (
-                    <span className={weightStats.delta >= 0 ? 'text-orange-600' : 'text-emerald-600'}>
+                  {weightStats.hasDelta && (
+                    <span
+                      className={weightStats.delta >= 0 ? 'text-orange-600' : 'text-emerald-600'}
+                      title={
+                        weightStats.baselineFromPrior
+                          ? 'Зміна з останнього зважування до цього вікна'
+                          : 'Зміна всередині вікна'
+                      }
+                    >
                       Δ {weightStats.delta >= 0 ? '+' : ''}
                       {weightStats.delta.toFixed(1)} кг
                     </span>
@@ -368,8 +502,8 @@ export default function StatsPanel({
                   <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
                   <XAxis
                     dataKey="date"
-                    ticks={days}
-                    tickFormatter={formatDayLabel}
+                    ticks={axisTicks}
+                    tickFormatter={axisTickFormatter}
                     tick={{ fontSize: 11, fill: '#94a3b8' }}
                     stroke="#cbd5e1"
                     interval={0}
@@ -404,7 +538,7 @@ export default function StatsPanel({
               </ResponsiveContainer>
               {weightStats == null && (
                 <p className="text-center text-sm text-gray-400 -mt-36 mb-36">
-                  Немає даних — введіть вагу для будь-якого дня тижня
+                  {emptyWeightHint}
                 </p>
               )}
             </div>
@@ -414,7 +548,7 @@ export default function StatsPanel({
           <section>
             <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
               <div>
-                <h3 className="text-base font-semibold text-gray-800">Спожиті калорії · за тиждень</h3>
+                <h3 className="text-base font-semibold text-gray-800">Спожиті калорії · {periodLabel}</h3>
                 <p className="text-xs text-gray-400">На основі відмічених прийомів їжі</p>
               </div>
               {calorieStats && (
@@ -441,8 +575,8 @@ export default function StatsPanel({
                   <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
                   <XAxis
                     dataKey="date"
-                    ticks={days}
-                    tickFormatter={formatDayLabel}
+                    ticks={axisTicks}
+                    tickFormatter={axisTickFormatter}
                     tick={{ fontSize: 11, fill: '#94a3b8' }}
                     stroke="#cbd5e1"
                     interval={0}

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Product } from '../types';
+import CameraScanner from './CameraScanner';
 
 interface Props {
   onSave: (product: Omit<Product, 'id'>) => void;
@@ -21,6 +22,45 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
   );
   const [unitLabel, setUnitLabel] = useState(initial?.unit?.label ?? '');
   const [fixedPortion, setFixedPortion] = useState(!!initial?.fixedPortion);
+
+  // Сканування етикетки через DeepSeek
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanMsg, setScanMsg] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
+
+  const handleCapture = async (dataUrl: string) => {
+    setShowScanner(false);
+    setScanning(true);
+    setScanMsg(null);
+    try {
+      const res = await fetch('/api/analyze-product', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setScanMsg({ kind: 'error', text: data?.error || 'Не вдалося розпізнати фото' });
+        return;
+      }
+      if (data.name) setName(data.name);
+      setCalories(String(data.calories ?? ''));
+      setProtein(String(data.protein ?? ''));
+      setFat(String(data.fat ?? ''));
+      setCarbs(String(data.carbs ?? ''));
+      const conf =
+        data.confidence === 'low'
+          ? ' (низька впевненість — перевірте значення)'
+          : data.confidence === 'medium'
+            ? ' (перевірте значення)'
+            : '';
+      setScanMsg({ kind: 'info', text: `Заповнено з фото${conf}` });
+    } catch {
+      setScanMsg({ kind: 'error', text: 'Помилка мережі під час розпізнавання' });
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +104,41 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
 
   return (
     <form onSubmit={handleSubmit} className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setShowScanner(true)}
+        disabled={scanning}
+        className="w-full flex items-center justify-center gap-2 py-2 rounded border border-dashed border-blue-300 text-blue-600 text-sm font-medium hover:bg-blue-50 disabled:opacity-60 transition-colors"
+      >
+        {scanning ? (
+          <>
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
+            </svg>
+            Розпізнаю фото…
+          </>
+        ) : (
+          <>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+            </svg>
+            Сканувати етикетку
+          </>
+        )}
+      </button>
+
+      {scanMsg && (
+        <p className={`text-xs ${scanMsg.kind === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+          {scanMsg.text}
+        </p>
+      )}
+
+      {showScanner && (
+        <CameraScanner onCapture={handleCapture} onCancel={() => setShowScanner(false)} />
+      )}
+
       <input
         type="text"
         placeholder="Назва продукту"

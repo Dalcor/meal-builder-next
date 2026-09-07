@@ -29,7 +29,7 @@ function isBool(v: unknown): v is boolean {
   return typeof v === 'boolean';
 }
 
-function isProduct(v: unknown): v is Product {
+export function isProduct(v: unknown): v is Product {
   if (!isObj(v)) return false;
   if (
     !isStr(v.id) ||
@@ -48,6 +48,7 @@ function isProduct(v: unknown): v is Product {
   }
   if (v.fixedPortion !== undefined && !isBool(v.fixedPortion)) return false;
   if (v.category !== undefined && !isStr(v.category)) return false;
+  if (v.imageUrl !== undefined && !isStr(v.imageUrl)) return false;
   return true;
 }
 

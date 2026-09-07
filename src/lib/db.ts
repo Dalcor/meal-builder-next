@@ -178,6 +178,11 @@ export async function listProducts(userId: string): Promise<Product[]> {
   return Object.values(obj);
 }
 
+export async function getProduct(userId: string, productId: string): Promise<Product | null> {
+  await migrateProductsToHash(userId);
+  return kv().hget<Product>(productsHashKey(userId), productId);
+}
+
 export async function setProduct(userId: string, product: Product): Promise<void> {
   await migrateProductsToHash(userId);
   await kv().hset(productsHashKey(userId), { [product.id]: product });

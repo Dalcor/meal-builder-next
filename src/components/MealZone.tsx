@@ -161,11 +161,24 @@ export default function MealZone({
               if (!n) return null;
               const ratio = item.grams / 100;
               const unit = getMealItemUnit(item, products);
+              const imageUrl =
+                item.sourceType === 'product'
+                  ? products.find(p => p.id === item.sourceId)?.imageUrl
+                  : undefined;
               return (
                 <div
                   key={item.id}
                   className="flex items-center justify-between gap-1.5 bg-white rounded px-2 py-1.5 shadow-sm group"
                 >
+                  {imageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={imageUrl}
+                      alt=""
+                      loading="lazy"
+                      className="w-7 h-7 rounded object-cover flex-shrink-0 bg-gray-100"
+                    />
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="text-xs sm:text-sm font-medium truncate">
                       {item.sourceType === 'dish' && (

@@ -18,6 +18,9 @@ export interface Product {
   // Optional category for grouping in the sidebar. Free-form string;
   // suggestions come from `presetCategories` and the user's existing values.
   category?: string;
+  // Public URL of a square thumbnail in Vercel Blob (see src/lib/images.ts).
+  // Shows what the product looks like; unrelated to the label scanner.
+  imageUrl?: string;
 }
 
 export interface DishIngredient {

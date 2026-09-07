@@ -5,6 +5,7 @@ interface Props {
   id: string;
   sourceType: 'product' | 'dish';
   nutrients: FoodNutrients;
+  imageUrl?: string;
   subtitle?: string;
   pinned?: boolean;
   onTogglePin?: () => void;
@@ -12,7 +13,7 @@ interface Props {
   onDelete: () => void;
 }
 
-export default function DraggableProduct({ id, sourceType, nutrients, subtitle, pinned, onTogglePin, onEdit, onDelete }: Props) {
+export default function DraggableProduct({ id, sourceType, nutrients, imageUrl, subtitle, pinned, onTogglePin, onEdit, onDelete }: Props) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id,
     data: { sourceType, sourceId: id },
@@ -35,16 +36,28 @@ export default function DraggableProduct({ id, sourceType, nutrients, subtitle, 
       <div
         {...listeners}
         {...attributes}
-        className="flex-1 sm:cursor-grab sm:active:cursor-grabbing select-none min-w-0 touch-manipulation"
+        className="flex-1 flex items-center gap-2 sm:cursor-grab sm:active:cursor-grabbing select-none min-w-0 touch-manipulation"
       >
-        <div className="font-medium text-sm truncate">{nutrients.name}</div>
-        {subtitle && (
-          <div className={`text-xs ${sourceType === 'dish' ? 'text-purple-500' : 'text-amber-600'}`}>
-            {subtitle}
-          </div>
+        {imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl}
+            alt=""
+            loading="lazy"
+            draggable={false}
+            className="w-10 h-10 rounded-md object-cover flex-shrink-0 bg-gray-100"
+          />
         )}
-        <div className="text-xs text-gray-500">
-          {nutrients.calories} ккал | Б {nutrients.protein} | Ж {nutrients.fat} | В {nutrients.carbs}
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-sm truncate">{nutrients.name}</div>
+          {subtitle && (
+            <div className={`text-xs ${sourceType === 'dish' ? 'text-purple-500' : 'text-amber-600'}`}>
+              {subtitle}
+            </div>
+          )}
+          <div className="text-xs text-gray-500">
+            {nutrients.calories} ккал | Б {nutrients.protein} | Ж {nutrients.fat} | В {nutrients.carbs}
+          </div>
         </div>
       </div>
       <div className="flex gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0">

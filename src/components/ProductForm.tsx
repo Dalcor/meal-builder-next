@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Product } from '../types';
 import CameraScanner from './CameraScanner';
+import ProductImageField, { releaseDraft, type ImageDraft } from './ProductImageField';
 
 interface Props {
   onSave: (product: Omit<Product, 'id'>) => void;
@@ -22,6 +23,13 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
   );
   const [unitLabel, setUnitLabel] = useState(initial?.unit?.label ?? '');
   const [fixedPortion, setFixedPortion] = useState(!!initial?.fixedPortion);
+
+  // Appearance photo. Uploaded only on submit, so cancelling the form
+  // never leaves an orphaned blob behind.
+  const [imageDraft, setImageDraft] = useState<ImageDraft>({ kind: 'unchanged' });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  useEffect(() => () => releaseDraft(imageDraft), [imageDraft]);
 
   // Сканування етикетки через DeepSeek
   const [showScanner, setShowScanner] = useState(false);
@@ -62,9 +70,9 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || saving) return;
 
     const data: Omit<Product, 'id'> = {
       name: name.trim(),
@@ -86,9 +94,33 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
       if (fixedPortion) data.fixedPortion = true;
     }
 
+    if (imageDraft.kind === 'unchanged' && initial?.imageUrl) {
+      data.imageUrl = initial.imageUrl;
+    } else if (imageDraft.kind === 'new') {
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const form = new FormData();
+        form.append('file', imageDraft.blob, 'product.webp');
+        const res = await fetch('/api/product-image', { method: 'POST', body: form });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || typeof json?.url !== 'string') {
+          setSaveError(json?.error || 'Не вдалося завантажити фото');
+          return;
+        }
+        data.imageUrl = json.url;
+      } catch {
+        setSaveError('Помилка мережі під час завантаження фото');
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
+
     onSave(data);
 
     if (!initial) {
+      setImageDraft({ kind: 'unchanged' });
       setName('');
       setCalories('');
       setProtein('');
@@ -138,6 +170,12 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
       {showScanner && (
         <CameraScanner onCapture={handleCapture} onCancel={() => setShowScanner(false)} />
       )}
+
+      <ProductImageField
+        currentUrl={initial?.imageUrl}
+        draft={imageDraft}
+        onChange={setImageDraft}
+      />
 
       <input
         type="text"
@@ -247,12 +285,15 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
         </div>
       )}
 
+      {saveError && <p className="text-xs text-red-600">{saveError}</p>}
+
       <div className="flex gap-2 pt-1">
         <button
           type="submit"
-          className="flex-1 bg-blue-500 text-white py-1.5 rounded text-sm font-medium hover:bg-blue-600 transition-colors"
+          disabled={saving}
+          className="flex-1 bg-blue-500 text-white py-1.5 rounded text-sm font-medium hover:bg-blue-600 disabled:opacity-60 transition-colors"
         >
-          {initial ? 'Зберегти' : 'Додати'}
+          {saving ? 'Завантажую фото…' : initial ? 'Зберегти' : 'Додати'}
         </button>
         {onCancel && (
           <button

@@ -27,6 +27,8 @@
 | Auth        | JWT через `jose` + cookie                                   | —                                 |
 | Паролі      | `bcryptjs` (sync)                                           | —                                 |
 | Сховище     | Upstash Redis (через `@upstash/redis`)                      | —                                 |
+| Файли       | Vercel Blob (`@vercel/blob`) — фото продуктів, стиснення `sharp` | —                            |
+| Кроп фото   | `react-easy-crop`                                           | —                                 |
 | TypeScript  | strict                                                      | 5                                 |
 
 > **Next.js 16 має breaking changes**. Найважливіше для цього проєкту:
@@ -57,6 +59,8 @@ meal-builder-next/
 │   │       │   ├── logout/route.ts     # POST → clear cookie
 │   │       │   ├── me/route.ts         # GET → перевірка токена
 │   │       │   └── register/route.ts   # POST → create user
+│   │       ├── product-image/route.ts        # POST multipart → sharp → Vercel Blob → { url }
+│   │       ├── product-image/fetch/route.ts  # POST { url } → SSRF-guarded proxy для кропу в браузері
 │   │       ├── products/route.ts       # GET, PUT
 │   │       ├── dishes/route.ts         # GET, PUT
 │   │       ├── meals/route.ts          # GET, PUT (всі дні)
@@ -75,10 +79,12 @@ meal-builder-next/
 │   ├── hooks/                 # порожній — кандидат на винесення хуків з App.tsx
 │   ├── lib/                   # SERVER-ONLY
 │   │   ├── auth.ts            # createToken, verifyToken, set/get/clear cookie
-│   │   ├── db.ts              # fs-based JSON DB (per-slice read/write + auto-migration)
+│   │   ├── db.ts              # Upstash Redis (per-slice read/write + auto-migration)
+│   │   ├── images.ts          # sharp → 512px WebP, put/del у Vercel Blob, fetchRemoteImage з SSRF-захистом
 │   │   └── validators.ts      # type guards для тіл PUT-запитів
 │   ├── utils/
 │   │   ├── nutrients.ts       # розрахунки КБЖУ для продукту/страви
+│   │   ├── imageCrop.ts       # CLIENT: експорт квадратного кропу в WebP/JPEG, витяг фото з буфера
 │   │   └── exportPdf.ts       # window.open + document.write + window.print
 │   ├── App.tsx                # NOTE: ~880 рядків — головна UI-збірка
 │   ├── middleware.ts          # NOTE: deprecated в Next 16 → треба proxy.ts
@@ -107,6 +113,15 @@ meal-builder-next/
 - **Сід:** `ensureSeedUser()` lazy-створює demo-юзера (`vr.peredera@gmail.com` / `mealbuilder123`) на першому виклику auth-функції, якщо його ще нема в KV. Idempotent. Каталог продуктів із `presets.ts` сідиться через `seedProductCatalog()` рівно один раз на користувача (прапорець `mb:user:{id}:products:seeded`, `SET NX`), і для зареєстрованих, і для demo-юзера.
 - **Валідація:** кожен PUT route використовує type guard з `src/lib/validators.ts` (`isProductArray`, `isDailyMeals` тощо). Невалідне тіло → `400 Invalid shape`.
 - **Файлова система більше не використовується** runtime-кодом. Папка `db/` залишена тимчасово як джерело для `npm run migrate:kv`.
+
+### Фото продуктів
+
+- `Product.imageUrl` — публічний URL мініатюри у Vercel Blob (`products/{userId}/…webp`). Це **зовнішній вигляд** продукту, не пов'язано зі сканером етикеток.
+- Джерела в `ProductImageField`: файл з галереї, буфер обміну (кнопка через Clipboard API або Ctrl+V у формі, приймає і зображення, і http-посилання), посилання. Усі три ведуть у `ImageCropModal` (react-easy-crop, aspect 1:1).
+- Завантаження відбувається **лише при submit** форми (`ProductForm`), тож скасування не лишає сиріт у Blob.
+- `POST /api/product-image` приймає ≤4 МБ (ліміт тіла Vercel-функції 4.5 МБ), `sharp` робить 512×512 WebP q80.
+- `POST /api/product-image/fetch` проксіює віддалене зображення для кропу (браузер не може читати чужі картинки через CORS). Захист: лише http/https, DNS-резолв і заборона приватних діапазонів на кожному редіректі, ліміт 15 МБ, таймаут 15 с, `content-type: image/*`.
+- Роути продуктів приймають `imageUrl` лише з нашого Blob-хоста і префікса цього користувача (`isOwnProductImageUrl`); при заміні або видаленні продукту старий blob видаляється best-effort.
 
 ### Drag & drop
 
@@ -147,6 +162,7 @@ Demo-користувач створюється автоматично в KV п
 
 - `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` — сховище. Альтернативні назви `KV_REST_API_URL` / `KV_REST_API_TOKEN` теж працюють.
 - `JWT_SECRET` — обов'язково в production, інакше використовується небезпечний fallback.
+- `BLOB_READ_WRITE_TOKEN` — Vercel Blob для фото продуктів (інжектиться при прив'язці store до проєкту).
 - `NODE_ENV=production` — щоб cookie стало `secure`.
 
 
@@ -168,6 +184,7 @@ npm run lint     # eslint
 5. **Не виводьте `passwordHash`** в API-відповідях.
 6. **Не міняйте бекенд debounce** з 500мс на менше — це створить навантаження на fs writes і race condition.
 7. **Не плутайте `getDishNutrients`** (повертає КБЖУ на 100г) з `getDishTotalWeight` (вага всієї страви).
+8. **Не приймайте довільний `imageUrl`** у роутах продуктів — лише через `isOwnProductImageUrl`, інакше можна підставити чужий blob або видалити чужий файл при cleanup.
 
 ## Технічний борг (не блокери, але треба знати)
 

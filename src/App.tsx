@@ -845,6 +845,7 @@ export default function App() {
                                     id={product.id}
                                     sourceType="product"
                                     nutrients={product}
+                                    imageUrl={product.imageUrl}
                                     subtitle={unitSubtitle}
                                     pinned={pinnedIds.includes(product.id)}
                                     onTogglePin={() => togglePin(product.id)}

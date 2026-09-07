@@ -511,6 +511,9 @@ function catalogSeededKey(userId: string): string {
 async function seedProductCatalog(userId: string): Promise<void> {
   const claimed = await kv().set(catalogSeededKey(userId), 1, { nx: true });
   if (claimed !== 'OK') return;
+  // A restored-from-backup database has no marker but already holds the
+  // user's catalog; never overwrite it with preset values.
+  if ((await kv().hlen(productsHashKey(userId))) > 0) return;
   const seedProducts = buildSeedProducts();
   if (seedProducts.length === 0) return;
   const fields: Record<string, Product> = {};

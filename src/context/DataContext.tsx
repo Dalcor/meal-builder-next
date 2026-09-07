@@ -11,6 +11,7 @@ import type {
   MealItem,
   MealPreset,
   UserData,
+  UserSettings,
 } from '@/types';
 import { getSourceNutrients } from '@/utils/nutrients';
 
@@ -19,6 +20,7 @@ interface DataContextValue extends UserData {
   // multi-tab risk worth granular ops).
   setTargets: React.Dispatch<React.SetStateAction<MealTargets>>;
   setMacroTargets: React.Dispatch<React.SetStateAction<MacroTargets>>;
+  setSettings: React.Dispatch<React.SetStateAction<UserSettings>>;
 
   // Granular per-item ops. Each one optimistically updates local state,
   // fires a per-id/per-date request, and reverts on failure.
@@ -56,6 +58,7 @@ const DEFAULTS: UserData = {
   mealsDone: {},
   mealPresets: [],
   weightLog: {},
+  settings: { weekStartDay: 1 },
 };
 
 const ENDPOINTS: Record<keyof UserData, string> = {
@@ -68,6 +71,7 @@ const ENDPOINTS: Record<keyof UserData, string> = {
   mealsDone: '/api/meals-done',
   mealPresets: '/api/meal-presets',
   weightLog: '/api/weight-log',
+  settings: '/api/settings',
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -224,6 +228,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [mealsDone, setMealsDone] = useState<Record<string, Partial<Record<MealType, boolean>>>>(DEFAULTS.mealsDone);
   const [mealPresets, setMealPresets] = useState<MealPreset[]>(DEFAULTS.mealPresets);
   const [weightLog, setWeightLog] = useState<Record<string, number>>(DEFAULTS.weightLog);
+  const [settings, setSettings] = useState<UserSettings>(DEFAULTS.settings);
 
   const baselines = useRef<Partial<UserData>>({});
 
@@ -244,6 +249,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       fetchSlice('mealsDone'),
       fetchSlice('mealPresets'),
       fetchSlice('weightLog'),
+      fetchSlice('settings'),
     ]).then(([
       productsData,
       dishesData,
@@ -254,6 +260,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       mealsDoneData,
       mealPresetsData,
       weightLogData,
+      settingsData,
     ]) => {
       if (cancelled) return;
       const safeProducts = productsData ?? DEFAULTS.products;
@@ -265,6 +272,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const safePinnedIds = pinnedIdsData ?? DEFAULTS.pinnedIds;
       const safeMealsDone = mealsDoneData ?? DEFAULTS.mealsDone;
       const safeWeightLog = weightLogData ?? DEFAULTS.weightLog;
+      const safeSettings = settingsData ?? DEFAULTS.settings;
 
       const { meals: enrichedMeals, presets: enrichedPresets } = backfillSnapshots(
         rawMeals,
@@ -288,6 +296,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         mealsDone: safeMealsDone,
         mealPresets: rawPresets,
         weightLog: safeWeightLog,
+        settings: safeSettings,
       };
 
       setProducts(safeProducts);
@@ -299,6 +308,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setMealsDone(safeMealsDone);
       setMealPresets(enrichedPresets);
       setWeightLog(safeWeightLog);
+      setSettings(safeSettings);
       setLoading(false);
     });
 
@@ -314,6 +324,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Everything else goes through the granular helpers below.
   useDebouncedSliceSave('targets', ENDPOINTS.targets, targets, ready, baselines, 400);
   useDebouncedSliceSave('macroTargets', ENDPOINTS.macroTargets, macroTargets, ready, baselines, 400);
+  useDebouncedSliceSave('settings', ENDPOINTS.settings, settings, ready, baselines, 400);
 
   // ---------- Granular mutators for products + pinned ----------
   // These optimistically update local state, then fire the granular
@@ -712,6 +723,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         mealsDone,
         mealPresets,
         weightLog,
+        settings,
+        setSettings,
         addProduct,
         updateProduct,
         removeProduct,

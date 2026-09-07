@@ -60,6 +60,7 @@ const SLICE_DEFAULTS: { [K in UserSliceKey]: UserData[K] } = {
   mealsDone: {},
   mealPresets: [],
   weightLog: {},
+  settings: { weekStartDay: 1 },
 };
 
 const SEED_EMAIL = 'vr.peredera@gmail.com';
@@ -91,7 +92,10 @@ async function ensureSeedUser(): Promise<void> {
   if (seedPromise) return seedPromise;
   seedPromise = (async () => {
     const existing = await kv().get<string>(emailKey(SEED_EMAIL));
-    if (existing) return;
+    if (existing) {
+      await seedProductCatalog(existing);
+      return;
+    }
     const seed: DbUser = {
       id: SEED_USER_ID,
       email: SEED_EMAIL,
@@ -100,6 +104,7 @@ async function ensureSeedUser(): Promise<void> {
     };
     await kv().set(userKey(seed.id), seed);
     await kv().set(emailKey(seed.email), seed.id);
+    await seedProductCatalog(seed.id);
   })().catch(err => {
     seedPromise = null;
     throw err;
@@ -486,16 +491,31 @@ export async function createUser(
   };
   await kv().set(userKey(newUser.id), newUser);
   await kv().set(emailKey(email), newUser.id);
-  // Seed the new user's product catalog with the default presets, so they
-  // start with a usable list instead of an empty sidebar. Stored directly
-  // in the HASH layout (no migration needed).
-  const seedProducts = buildSeedProducts();
-  if (seedProducts.length > 0) {
-    const fields: Record<string, Product> = {};
-    for (const p of seedProducts) fields[p.id] = p;
-    await kv().hset(productsHashKey(newUser.id), fields);
-  }
+  await seedProductCatalog(newUser.id);
   return newUser;
+}
+
+// Seed a user's product catalog with the default presets, so they start
+// with a usable list instead of an empty sidebar. Stored directly in the
+// HASH layout (no migration needed). Used for both registered users and
+// the lazily-created demo account.
+//
+// Runs at most once per user: a marker key is claimed with SET NX first,
+// so a user who later deletes every product is NOT re-seeded, and a demo
+// account that already existed before seeding was added still gets its
+// catalog exactly once.
+function catalogSeededKey(userId: string): string {
+  return `mb:user:${userId}:products:seeded`;
+}
+
+async function seedProductCatalog(userId: string): Promise<void> {
+  const claimed = await kv().set(catalogSeededKey(userId), 1, { nx: true });
+  if (claimed !== 'OK') return;
+  const seedProducts = buildSeedProducts();
+  if (seedProducts.length === 0) return;
+  const fields: Record<string, Product> = {};
+  for (const p of seedProducts) fields[p.id] = p;
+  await kv().hset(productsHashKey(userId), fields);
 }
 
 export function verifyPassword(user: DbUser, password: string): boolean {

@@ -65,7 +65,8 @@ meal-builder-next/
 │   │       ├── macro-targets/route.ts  # GET, PUT
 │   │       ├── pinned/route.ts         # GET, PUT
 │   │       ├── meals-done/route.ts     # GET, PUT
-│   │       └── weight-log/route.ts     # GET, PUT
+│   │       ├── weight-log/route.ts     # GET, PUT
+│   │       └── settings/route.ts       # GET, PUT (weekStartDay тощо)
 │   ├── components/            # 10 React-компонентів (модалки, продукти, страви, статистика)
 │   ├── context/
 │   │   └── DataContext.tsx    # глобальний state + auto-save (debounce 500мс)
@@ -103,7 +104,7 @@ meal-builder-next/
 - **Завантаження:** при mount `DataProvider` робить **9 паралельних GET** (по одному на slice: `/api/products`, `/api/dishes`, `/api/meals`, `/api/meal-presets`, `/api/targets`, `/api/macro-targets`, `/api/pinned`, `/api/meals-done`, `/api/weight-log`).
 - **Збереження:** кожен slice має власний debounced (500мс) PUT через `useDebouncedSave`. Зміна одного slice (напр., `products`) НЕ триггерить PUT інших — кожен endpoint валідує тільки свою форму, тож пошкоджений запит не може стерти інші дані. Блок захищений `initialized.current = true` через 100мс після завантаження, щоб не зберегти defaults.
 - **Сервер:** `readSlice<K>(userId, key)` / `writeSlice<K>(userId, key, value)` — async-функції в `src/lib/db.ts`, що читають/пишуть в Upstash Redis за ключами `mb:user:{userId}:{slice}`. Користувачі — `mb:user:{id}` + `mb:userByEmail:{email}` (індекс).
-- **Сід:** `ensureSeedUser()` lazy-створює demo-юзера (`vr.peredera@gmail.com` / `mealbuilder123`) на першому виклику auth-функції, якщо його ще нема в KV. Idempotent.
+- **Сід:** `ensureSeedUser()` lazy-створює demo-юзера (`vr.peredera@gmail.com` / `mealbuilder123`) на першому виклику auth-функції, якщо його ще нема в KV. Idempotent. Каталог продуктів із `presets.ts` сідиться через `seedProductCatalog()` рівно один раз на користувача (прапорець `mb:user:{id}:products:seeded`, `SET NX`), і для зареєстрованих, і для demo-юзера.
 - **Валідація:** кожен PUT route використовує type guard з `src/lib/validators.ts` (`isProductArray`, `isDailyMeals` тощо). Невалідне тіло → `400 Invalid shape`.
 - **Файлова система більше не використовується** runtime-кодом. Папка `db/` залишена тимчасово як джерело для `npm run migrate:kv`.
 
@@ -126,6 +127,7 @@ meal-builder-next/
 - `dailyMeals[dateKey]` — об'єкт `Meals` для цього дня. Якщо запису немає — використовується `EMPTY_MEALS` (read-only).
 - `mealsDone[dateKey][mealType]` — чекбокс «з'їдено».
 - `weightLog[dateKey]` — число (кг) або відсутнє.
+- `settings.weekStartDay` — день початку тижня (`0` = нд … `6` = сб, як `Date#getDay()`), задається в модалці налаштувань і визначає тижневе вікно в `StatsPanel`. Дефолт `1` (понеділок).
 
 ## Налаштування для локального запуску
 

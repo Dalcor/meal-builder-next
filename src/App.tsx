@@ -76,7 +76,7 @@ export default function App() {
   const {
     products, dishes, dailyMeals,
     targets, setTargets, macroTargets, setMacroTargets, pinnedIds,
-    mealsDone, mealPresets, weightLog,
+    mealsDone, mealPresets, weightLog, settings, setSettings,
     addProduct, updateProduct, removeProduct, pinProduct, unpinProduct,
     addDish, updateDish, removeDish,
     setMealsForDate, addMealPreset, removeMealPreset,
@@ -1083,8 +1083,10 @@ export default function App() {
       {showSettings && (
         <SettingsModal
           macroTargets={macroTargets}
+          settings={settings}
           onSave={next => {
-            setMacroTargets(next);
+            setMacroTargets(next.macroTargets);
+            setSettings(next.settings);
             setShowSettings(false);
           }}
           onCancel={() => setShowSettings(false)}
@@ -1124,6 +1126,7 @@ export default function App() {
           products={products}
           dishes={dishes}
           selectedDate={selectedDate}
+          weekStartDay={settings.weekStartDay}
           onWeightChange={(date, weight) => {
             if (weight === null) deleteWeightForDate(date);
             else setWeightForDate(date, weight);

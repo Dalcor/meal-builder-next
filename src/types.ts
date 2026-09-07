@@ -80,6 +80,14 @@ export interface MacroTargets {
   fatPercent: number;
 }
 
+// 0 = Sunday … 6 = Saturday, matching Date#getDay(). Drives which day the
+// weekly stats window starts on (people track progress from different days).
+export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface UserSettings {
+  weekStartDay: Weekday;
+}
+
 export interface MealPreset {
   id: string;
   name: string;
@@ -96,6 +104,7 @@ export interface UserData {
   mealsDone: Record<string, Partial<Record<MealType, boolean>>>;
   mealPresets: MealPreset[];
   weightLog: Record<string, number>;
+  settings: UserSettings;
 }
 
 export type UserSliceKey = keyof UserData;

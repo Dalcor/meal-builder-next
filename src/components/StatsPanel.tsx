@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { Meals, MealType, Product, Dish } from '../types';
+import type { Meals, MealType, Product, Dish, Weekday } from '../types';
 import { getMealItemNutrients } from '../utils/nutrients';
 
 interface Props {
@@ -19,6 +19,7 @@ interface Props {
   products: Product[];
   dishes: Dish[];
   selectedDate: string;
+  weekStartDay: Weekday;
   onWeightChange: (date: string, weight: number | null) => void;
   onClose: () => void;
 }
@@ -46,11 +47,11 @@ function shiftDateKey(dateKey: string, days: number): string {
   return toDateKey(d);
 }
 
-// Week starts on Tuesday. Returns the YYYY-MM-DD of the Tuesday on/before dateKey.
-function getWeekStart(dateKey: string): string {
+// Returns the YYYY-MM-DD of the most recent `weekStartDay` on/before dateKey.
+function getWeekStart(dateKey: string, weekStartDay: Weekday): string {
   const d = new Date(dateKey + 'T00:00:00');
   const day = d.getDay();
-  const offset = -((day - 2 + 7) % 7);
+  const offset = -((day - weekStartDay + 7) % 7);
   d.setDate(d.getDate() + offset);
   return toDateKey(d);
 }
@@ -61,8 +62,8 @@ function getMonthStart(dateKey: string): string {
   return toDateKey(d);
 }
 
-function getWindowStart(dateKey: string, mode: ViewMode): string {
-  return mode === 'week' ? getWeekStart(dateKey) : getMonthStart(dateKey);
+function getWindowStart(dateKey: string, mode: ViewMode, weekStartDay: Weekday): string {
+  return mode === 'week' ? getWeekStart(dateKey, weekStartDay) : getMonthStart(dateKey);
 }
 
 function getWindowDays(windowStart: string, mode: ViewMode): string[] {
@@ -189,12 +190,15 @@ export default function StatsPanel({
   products,
   dishes,
   selectedDate,
+  weekStartDay,
   onWeightChange,
   onClose,
 }: Props) {
   const [weightInput, setWeightInput] = useState(weightLog[selectedDate]?.toString() ?? '');
   const [viewMode, setViewMode] = useState<ViewMode>('week');
-  const [windowStart, setWindowStart] = useState(() => getWindowStart(selectedDate, 'week'));
+  const [windowStart, setWindowStart] = useState(() =>
+    getWindowStart(selectedDate, 'week', weekStartDay),
+  );
 
   // Reset weight input and window anchor when the selected date changes
   // (React-recommended "adjusting state on prop change" pattern).
@@ -202,12 +206,20 @@ export default function StatsPanel({
   if (prevDate !== selectedDate) {
     setPrevDate(selectedDate);
     setWeightInput(weightLog[selectedDate]?.toString() ?? '');
-    setWindowStart(getWindowStart(selectedDate, viewMode));
+    setWindowStart(getWindowStart(selectedDate, viewMode, weekStartDay));
+  }
+
+  // Re-anchor the week window if the user changes the week start while
+  // the panel is open (otherwise the window would start on a stale day).
+  const [prevWeekStartDay, setPrevWeekStartDay] = useState(weekStartDay);
+  if (prevWeekStartDay !== weekStartDay) {
+    setPrevWeekStartDay(weekStartDay);
+    setWindowStart(getWindowStart(selectedDate, viewMode, weekStartDay));
   }
 
   const todayWindowStart = useMemo(
-    () => getWindowStart(toDateKey(new Date()), viewMode),
-    [viewMode]
+    () => getWindowStart(toDateKey(new Date()), viewMode, weekStartDay),
+    [viewMode, weekStartDay]
   );
   const isCurrentWindow = windowStart === todayWindowStart;
   const isFutureWindow = windowStart > todayWindowStart;
@@ -324,7 +336,7 @@ export default function StatsPanel({
   const switchMode = (mode: ViewMode) => {
     if (mode === viewMode) return;
     setViewMode(mode);
-    setWindowStart(getWindowStart(selectedDate, mode));
+    setWindowStart(getWindowStart(selectedDate, mode, weekStartDay));
   };
 
   const periodLabel = viewMode === 'week' ? 'за тиждень' : 'за місяць';

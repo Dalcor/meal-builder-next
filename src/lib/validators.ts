@@ -8,6 +8,7 @@ import type {
   MacroTargets,
   Meals,
   MealType,
+  UserSettings,
 } from '@/types';
 
 const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snacks'];
@@ -155,6 +156,12 @@ export function isMealsDone(
     }
   }
   return true;
+}
+
+export function isUserSettings(v: unknown): v is UserSettings {
+  if (!isObj(v)) return false;
+  const d = v.weekStartDay;
+  return isNum(d) && Number.isInteger(d) && d >= 0 && d <= 6;
 }
 
 export function isWeightLog(v: unknown): v is Record<string, number> {

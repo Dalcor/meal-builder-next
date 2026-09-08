@@ -62,6 +62,7 @@ meal-builder-next/
 │   │       ├── product-image/route.ts        # POST multipart → sharp → Vercel Blob → { url }
 │   │       ├── product-image/fetch/route.ts  # POST { url } → SSRF-guarded proxy для кропу в браузері
 │   │       ├── product-image/silpo/route.ts  # GET ?q= → пошук товарів на silpo.ua (title + URL картинок)
+│   │       ├── nutrition-search/route.ts     # GET ?source=silpo|tablycja&q= → КБЖВ на 100 г із зовнішніх каталогів
 │   │       ├── products/route.ts       # GET, PUT
 │   │       ├── dishes/route.ts         # GET, PUT
 │   │       ├── meals/route.ts          # GET, PUT (всі дні)
@@ -83,6 +84,7 @@ meal-builder-next/
 │   │   ├── db.ts              # Upstash Redis (per-slice read/write + auto-migration)
 │   │   ├── images.ts          # sharp → 512px WebP, put/del у Vercel Blob, fetchRemoteImage з SSRF-захистом
 │   │   ├── silpo.ts           # searchSilpo(): публічний storefront API sf-ecom-api.silpo.ua, картинки images.silpo.ua
+│   │   ├── nutritionSources.ts # searchNutrition(): Сільпо (attributeGroups.nutrient з картки) і tablycjakalorijnosti (autocomplete + JSON-LD сторінки)
 │   │   └── validators.ts      # type guards для тіл PUT-запитів
 │   ├── utils/
 │   │   ├── nutrients.ts       # розрахунки КБЖУ для продукту/страви
@@ -125,6 +127,12 @@ meal-builder-next/
 - `POST /api/product-image` приймає ≤4 МБ (ліміт тіла Vercel-функції 4.5 МБ), `sharp` робить 512×512 WebP q80.
 - `POST /api/product-image/fetch` проксіює віддалене зображення для кропу (браузер не може читати чужі картинки через CORS). Захист: лише http/https, DNS-резолв і заборона приватних діапазонів на кожному редіректі, ліміт 15 МБ, таймаут 15 с, `content-type: image/*`.
 - Роути продуктів приймають `imageUrl` лише з нашого Blob-хоста і префікса цього користувача (`isOwnProductImageUrl`); при заміні або видаленні продукту старий blob видаляється best-effort.
+
+### Імпорт КБЖВ
+
+- Кнопка «Імпорт КБЖВ» у `ProductForm` відкриває `NutritionImportModal` з двома джерелами. Запит підставляється з назви продукту; вибір заповнює калорії/Б/Ж/В, назву лише якщо поле порожнє.
+- Обидва джерела потребують другого запиту на кожен результат (Сільпо: картка товару, таблиця: HTML сторінки), тому fan-out обмежений `DETAIL_LIMIT = 8`, усе паралельно з таймаутом 12 с. Результати без харчової цінності відкидаються.
+- Це неофіційні ендпоінти, парсери толерантні: невідома форма → порожній список, а не 500.
 
 ### Drag & drop
 

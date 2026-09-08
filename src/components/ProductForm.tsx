@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Product } from '../types';
 import CameraScanner from './CameraScanner';
 import ProductImageField, { releaseDraft, type ImageDraft } from './ProductImageField';
+import NutritionImportModal, { type NutritionPick } from './NutritionImportModal';
 
 interface Props {
   onSave: (product: Omit<Product, 'id'>) => void;
@@ -31,7 +32,21 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
   const [saveError, setSaveError] = useState<string | null>(null);
   useEffect(() => () => releaseDraft(imageDraft), [imageDraft]);
 
-  // Сканування етикетки через DeepSeek
+  // Імпорт КБЖВ із зовнішніх каталогів (Сільпо / таблиця калорійності).
+  const [showImport, setShowImport] = useState(false);
+  const applyImport = (pick: NutritionPick) => {
+    // Keep the user's own name if they already typed one — they may have
+    // searched by a different wording on purpose.
+    if (!name.trim()) setName(pick.title);
+    setCalories(String(pick.calories));
+    setProtein(String(pick.protein));
+    setFat(String(pick.fat));
+    setCarbs(String(pick.carbs));
+    setScanMsg({ kind: 'info', text: `Імпортовано: ${pick.title}` });
+    setShowImport(false);
+  };
+
+  // Сканування етикетки через Gemini
   const [showScanner, setShowScanner] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
@@ -136,11 +151,22 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
 
   return (
     <form onSubmit={handleSubmit} className="space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+      <button
+        type="button"
+        onClick={() => setShowImport(true)}
+        className="flex items-center justify-center gap-2 py-2 rounded border border-dashed border-green-400 text-green-700 text-sm font-medium hover:bg-green-50 transition-colors"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+        </svg>
+        Імпорт КБЖВ
+      </button>
       <button
         type="button"
         onClick={() => setShowScanner(true)}
         disabled={scanning}
-        className="w-full flex items-center justify-center gap-2 py-2 rounded border border-dashed border-blue-300 text-blue-600 text-sm font-medium hover:bg-blue-50 disabled:opacity-60 transition-colors"
+        className="flex items-center justify-center gap-2 py-2 rounded border border-dashed border-blue-300 text-blue-600 text-sm font-medium hover:bg-blue-50 disabled:opacity-60 transition-colors"
       >
         {scanning ? (
           <>
@@ -160,6 +186,15 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
           </>
         )}
       </button>
+      </div>
+
+      {showImport && (
+        <NutritionImportModal
+          initialQuery={name}
+          onPick={applyImport}
+          onCancel={() => setShowImport(false)}
+        />
+      )}
 
       {scanMsg && (
         <p className={`text-xs ${scanMsg.kind === 'error' ? 'text-red-600' : 'text-green-600'}`}>

@@ -69,29 +69,32 @@ export default function SilpoImagePicker({ initialQuery, busy = false, onPick, o
         <DrawerHandle onClose={onCancel} />
         <div className="p-4 border-b space-y-2">
           <h2 className="font-semibold">Фото з Сільпо</h2>
-          <form
-            className="flex gap-2"
-            onSubmit={e => {
-              e.preventDefault();
-              void search(query);
-            }}
-          >
+          {/* Not a <form>: this modal renders inside the product form, and a
+              nested form's submit button would submit the outer one. */}
+          <div className="flex gap-2">
             <input
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void search(query);
+                }
+              }}
               placeholder="Назва товару"
               className="flex-1 min-w-0 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               autoFocus
             />
             <button
-              type="submit"
+              type="button"
+              onClick={() => void search(query)}
               disabled={loading || !query.trim()}
               className="px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-60 transition-colors"
             >
               Шукати
             </button>
-          </form>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">

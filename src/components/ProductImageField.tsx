@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import ImageCropModal from './ImageCropModal';
+import SilpoImagePicker from './SilpoImagePicker';
 import { imageFromDataTransfer, looksLikeHttpUrl } from '../utils/imageCrop';
 
 // What the form will do with the image on save.
@@ -12,6 +13,8 @@ interface Props {
   currentUrl?: string;
   draft: ImageDraft;
   onChange: (next: ImageDraft) => void;
+  // Pre-fills the Silpo search (the product name being edited).
+  suggestedQuery?: string;
 }
 
 // Object URLs are owned by the form (revoked in its effect cleanup), so
@@ -22,9 +25,10 @@ export function releaseDraft(draft: ImageDraft) {
 
 // Product appearance photo: from a file, the clipboard, or a URL. Every
 // source funnels into the same crop step so the result is always square.
-export default function ProductImageField({ currentUrl, draft, onChange }: Props) {
+export default function ProductImageField({ currentUrl, draft, onChange, suggestedQuery = '' }: Props) {
   const [cropSource, setCropSource] = useState<Blob | null>(null);
   const [showUrl, setShowUrl] = useState(false);
+  const [showSilpo, setShowSilpo] = useState(false);
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -38,11 +42,12 @@ export default function ProductImageField({ currentUrl, draft, onChange }: Props
     setCropSource(blob);
   };
 
-  const fetchByUrl = async (raw: string) => {
+  // Returns true when an image was fetched and the crop step opened.
+  const fetchByUrl = async (raw: string): Promise<boolean> => {
     const trimmed = raw.trim();
     if (!looksLikeHttpUrl(trimmed)) {
       setMessage('Введіть посилання, що починається з http:// або https://');
-      return;
+      return false;
     }
     setBusy(true);
     setMessage(null);
@@ -55,16 +60,22 @@ export default function ProductImageField({ currentUrl, draft, onChange }: Props
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         setMessage(data?.error || 'Не вдалося завантажити зображення');
-        return;
+        return false;
       }
       startCrop(await res.blob());
       setShowUrl(false);
       setUrl('');
+      return true;
     } catch {
       setMessage('Помилка мережі');
+      return false;
     } finally {
       setBusy(false);
     }
+  };
+
+  const pickFromSilpo = async (imageUrl: string) => {
+    if (await fetchByUrl(imageUrl)) setShowSilpo(false);
   };
 
   // Explicit "paste" button via the async Clipboard API (needs a user
@@ -168,6 +179,14 @@ export default function ProductImageField({ currentUrl, draft, onChange }: Props
           >
             За посиланням
           </button>
+          <button
+            type="button"
+            className={`${btn} text-green-700 border-green-300 hover:bg-green-50`}
+            onClick={() => setShowSilpo(true)}
+            disabled={busy}
+          >
+            Сільпо
+          </button>
           {previewUrl && (
             <button type="button" className={`${btn} text-red-600`} onClick={remove} disabled={busy}>
               Прибрати
@@ -214,6 +233,15 @@ export default function ProductImageField({ currentUrl, draft, onChange }: Props
         )}
         {message && <p className="text-xs text-red-600">{message}</p>}
       </div>
+
+      {showSilpo && (
+        <SilpoImagePicker
+          initialQuery={suggestedQuery}
+          busy={busy}
+          onPick={url => void pickFromSilpo(url)}
+          onCancel={() => setShowSilpo(false)}
+        />
+      )}
 
       {cropSource && (
         <ImageCropModal

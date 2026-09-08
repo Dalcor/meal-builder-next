@@ -175,6 +175,7 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
         currentUrl={initial?.imageUrl}
         draft={imageDraft}
         onChange={setImageDraft}
+        suggestedQuery={name}
       />
 
       <input

@@ -61,6 +61,7 @@ meal-builder-next/
 │   │       │   └── register/route.ts   # POST → create user
 │   │       ├── product-image/route.ts        # POST multipart → sharp → Vercel Blob → { url }
 │   │       ├── product-image/fetch/route.ts  # POST { url } → SSRF-guarded proxy для кропу в браузері
+│   │       ├── product-image/silpo/route.ts  # GET ?q= → пошук товарів на silpo.ua (title + URL картинок)
 │   │       ├── products/route.ts       # GET, PUT
 │   │       ├── dishes/route.ts         # GET, PUT
 │   │       ├── meals/route.ts          # GET, PUT (всі дні)
@@ -81,6 +82,7 @@ meal-builder-next/
 │   │   ├── auth.ts            # createToken, verifyToken, set/get/clear cookie
 │   │   ├── db.ts              # Upstash Redis (per-slice read/write + auto-migration)
 │   │   ├── images.ts          # sharp → 512px WebP, put/del у Vercel Blob, fetchRemoteImage з SSRF-захистом
+│   │   ├── silpo.ts           # searchSilpo(): публічний storefront API sf-ecom-api.silpo.ua, картинки images.silpo.ua
 │   │   └── validators.ts      # type guards для тіл PUT-запитів
 │   ├── utils/
 │   │   ├── nutrients.ts       # розрахунки КБЖУ для продукту/страви
@@ -117,7 +119,8 @@ meal-builder-next/
 ### Фото продуктів
 
 - `Product.imageUrl` — публічний URL мініатюри у Vercel Blob (`products/{userId}/…webp`). Це **зовнішній вигляд** продукту, не пов'язано зі сканером етикеток.
-- Джерела в `ProductImageField`: файл з галереї, буфер обміну (кнопка через Clipboard API або Ctrl+V у формі, приймає і зображення, і http-посилання), посилання. Усі три ведуть у `ImageCropModal` (react-easy-crop, aspect 1:1).
+- Джерела в `ProductImageField`: файл з галереї, буфер обміну (кнопка через Clipboard API або Ctrl+V у формі, приймає і зображення, і http-посилання), посилання, пошук у Сільпо (`SilpoImagePicker`: запит підставляється з назви продукту, вибране 800px фото йде через `/api/product-image/fetch`). Усі шляхи ведуть у `ImageCropModal` (react-easy-crop, aspect 1:1).
+- Сільпо: неофіційний API, який використовує їхній сайт (`sf-ecom-api.silpo.ua/v1/uk/branches/<нульовий uuid>/products?search=`). Може змінитись без попередження, тому `searchSilpo` толерантний до форми відповіді і повертає порожній список, а не падає.
 - Завантаження відбувається **лише при submit** форми (`ProductForm`), тож скасування не лишає сиріт у Blob.
 - `POST /api/product-image` приймає ≤4 МБ (ліміт тіла Vercel-функції 4.5 МБ), `sharp` робить 512×512 WebP q80.
 - `POST /api/product-image/fetch` проксіює віддалене зображення для кропу (браузер не може читати чужі картинки через CORS). Захист: лише http/https, DNS-резолв і заборона приватних діапазонів на кожному редіректі, ліміт 15 МБ, таймаут 15 с, `content-type: image/*`.

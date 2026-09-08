@@ -13,10 +13,23 @@ export interface PresetCategory {
   items: PresetProduct[];
 }
 
+// Stable id per preset (FNV-1a over category + name). Random ids made
+// seeding non-idempotent: a second run (e.g. after a backup restore lost
+// the "seeded" marker) produced a full set of duplicates. With stable ids
+// HSET simply overwrites the same fields.
+function presetId(category: string, name: string): string {
+  let h = 0x811c9dc5;
+  for (const ch of `${category}|${name}`) {
+    h ^= ch.codePointAt(0)!;
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `preset-${h.toString(16).padStart(8, '0')}`;
+}
+
 export function buildSeedProducts(): Product[] {
   return presetCategories.flatMap(cat =>
     cat.items.map<Product>(item => ({
-      id: crypto.randomUUID(),
+      id: presetId(cat.name, item.name),
       name: item.name,
       calories: item.calories,
       protein: item.protein,

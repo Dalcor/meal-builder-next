@@ -34,7 +34,8 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
 
   // Імпорт КБЖВ із зовнішніх каталогів (Сільпо / таблиця калорійності).
   const [showImport, setShowImport] = useState(false);
-  const applyImport = (pick: NutritionPick) => {
+  const [importingImage, setImportingImage] = useState(false);
+  const applyImport = async (pick: NutritionPick) => {
     // Keep the user's own name if they already typed one — they may have
     // searched by a different wording on purpose.
     if (!name.trim()) setName(pick.title);
@@ -42,8 +43,31 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
     setProtein(String(pick.protein));
     setFat(String(pick.fat));
     setCarbs(String(pick.carbs));
-    setScanMsg({ kind: 'info', text: `Імпортовано: ${pick.title}` });
     setShowImport(false);
+    if (!pick.imageUrl) {
+      setScanMsg({ kind: 'info', text: `Імпортовано: ${pick.title}` });
+      return;
+    }
+    // Photo comes along automatically. No crop step: the server centre-
+    // crops to a square on upload, and the user can still re-pick or
+    // re-crop through the photo field before saving.
+    setImportingImage(true);
+    setScanMsg({ kind: 'info', text: `Імпортовано: ${pick.title}. Завантажую фото…` });
+    try {
+      const res = await fetch('/api/product-image/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: pick.imageUrl }),
+      });
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      setImageDraft({ kind: 'new', blob, previewUrl: URL.createObjectURL(blob) });
+      setScanMsg({ kind: 'info', text: `Імпортовано з фото: ${pick.title}` });
+    } catch {
+      setScanMsg({ kind: 'info', text: `Імпортовано: ${pick.title} (фото не вдалося завантажити)` });
+    } finally {
+      setImportingImage(false);
+    }
   };
 
   // Сканування етикетки через Gemini
@@ -191,7 +215,7 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
       {showImport && (
         <NutritionImportModal
           initialQuery={name}
-          onPick={applyImport}
+          onPick={pick => void applyImport(pick)}
           onCancel={() => setShowImport(false)}
         />
       )}
@@ -326,10 +350,10 @@ export default function ProductForm({ onSave, initial, onCancel, categorySuggest
       <div className="flex gap-2 pt-1">
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || importingImage}
           className="flex-1 bg-blue-500 text-white py-1.5 rounded text-sm font-medium hover:bg-blue-600 disabled:opacity-60 transition-colors"
         >
-          {saving ? 'Завантажую фото…' : initial ? 'Зберегти' : 'Додати'}
+          {saving || importingImage ? 'Завантажую фото…' : initial ? 'Зберегти' : 'Додати'}
         </button>
         {onCancel && (
           <button

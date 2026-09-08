@@ -13,7 +13,7 @@ export interface NutritionHit {
   title: string;
   brand?: string;
   thumbUrl?: string;
-  // Full-size photo suitable for the crop step (Silpo only).
+  // Full-size photo (Silpo 800px, tablycja original ~640px).
   imageUrl?: string;
   calories: number;
   protein: number;
@@ -209,6 +209,7 @@ async function searchTablycja(query: string): Promise<NutritionHit[]> {
       title: s.title as string,
       brand: typeof s.brandName === 'string' && s.brandName ? s.brandName : undefined,
       thumbUrl: s.hasImage ? `${TK_BASE}/file/image/thumb/foodstuff/${s.id}` : undefined,
+      imageUrl: s.hasImage ? `${TK_BASE}/file/image/foodstuff/${s.id}` : undefined,
       calories: num(s.value)!,
       ...m,
     });

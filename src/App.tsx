@@ -25,6 +25,7 @@ import StatsPanel from '@/components/StatsPanel';
 import AddItemModal from '@/components/AddItemModal';
 import CategoriesModal from '@/components/CategoriesModal';
 import SettingsModal from '@/components/SettingsModal';
+import SyncButton from '@/components/SyncButton';
 import DrawerHandle from '@/components/DrawerHandle';
 import { presetCategories } from '@/data/presets';
 
@@ -77,6 +78,7 @@ export default function App() {
     products, dishes, dailyMeals,
     targets, setTargets, macroTargets, setMacroTargets, pinnedIds,
     mealsDone, mealPresets, weightLog, settings, setSettings,
+    loadError, refresh,
     addProduct, updateProduct, removeProduct, pinProduct, unpinProduct,
     addDish, updateDish, removeDish,
     setMealsForDate, addMealPreset, removeMealPreset,
@@ -578,6 +580,27 @@ export default function App() {
     );
   }
 
+  // A failed initial load must not fall through to an empty app: editing
+  // from that state would write the emptiness back over real data.
+  if (loadError) {
+    return (
+      <div className="h-screen flex items-center justify-center p-6">
+        <div className="text-center space-y-3">
+          <p className="text-gray-700">{loadError}</p>
+          <p className="text-xs text-gray-400">
+            Перевірте зʼєднання. Дані на сервері не змінені.
+          </p>
+          <button
+            onClick={() => void refresh()}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
+          >
+            Спробувати ще раз
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="h-screen flex flex-col overflow-hidden">
@@ -587,6 +610,7 @@ export default function App() {
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <h1 className="text-base sm:text-xl font-bold text-gray-800">Meal Builder</h1>
               <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                <SyncButton />
                 <button
                   onClick={() => setShowStats(true)}
                   className="text-xs text-gray-400 hover:text-gray-600 transition-colors"

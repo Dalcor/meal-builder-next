@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import type {
   Product,
   Dish,
@@ -46,6 +46,16 @@ interface DataContextValue extends UserData {
 
   loading: boolean;
   logout: () => Promise<void>;
+
+  // ---------- Sync with the server ----------
+  // The client keeps a full in-memory mirror, so a tab that has been open
+  // for a while shows (and writes back) a stale copy. `refresh` re-reads
+  // every slice; it also runs automatically when the tab regains focus.
+  refresh: () => Promise<boolean>;
+  syncing: boolean;
+  lastSyncedAt: number | null;
+  syncError: string | null;
+  loadError: string | null;
 }
 
 const DEFAULTS: UserData = {
@@ -73,6 +83,25 @@ const ENDPOINTS: Record<keyof UserData, string> = {
   weightLog: '/api/weight-log',
   settings: '/api/settings',
 };
+
+const SLICE_KEYS = Object.keys(ENDPOINTS) as (keyof UserData)[];
+
+// Ignore focus/visibility bursts (switching tabs fires several events).
+const MIN_AUTO_SYNC_GAP_MS = 3000;
+
+// Reads every slice. A failed slice rejects the whole load instead of
+// quietly yielding defaults: an empty catalogue in memory is exactly what
+// later gets written back over good server data.
+async function fetchAllSlices(): Promise<Partial<UserData>> {
+  const entries = await Promise.all(
+    SLICE_KEYS.map(async key => {
+      const r = await fetch(ENDPOINTS[key], { cache: 'no-store' });
+      if (!r.ok) throw new Error(`GET ${ENDPOINTS[key]} → ${r.status}`);
+      return [key, await r.json()] as const;
+    }),
+  );
+  return Object.fromEntries(entries) as Partial<UserData>;
+}
 
 const DataContext = createContext<DataContextValue | null>(null);
 
@@ -230,92 +259,158 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [weightLog, setWeightLog] = useState<Record<string, number>>(DEFAULTS.weightLog);
   const [settings, setSettings] = useState<UserSettings>(DEFAULTS.settings);
 
+  const [syncing, setSyncing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const baselines = useRef<Partial<UserData>>({});
 
+  // Mirrors the blob slices so a refresh can tell "the user typed something
+  // that isn't saved yet" from "this is just what we loaded".
+  const blobRef = useRef({ targets, macroTargets, settings });
   useEffect(() => {
-    let cancelled = false;
-    const fetchSlice = <K extends keyof UserData>(key: K): Promise<UserData[K]> =>
-      fetch(ENDPOINTS[key])
-        .then(r => (r.ok ? (r.json() as Promise<UserData[K]>) : DEFAULTS[key]))
-        .catch(() => DEFAULTS[key]);
+    blobRef.current = { targets, macroTargets, settings };
+  }, [targets, macroTargets, settings]);
 
-    Promise.all([
-      fetchSlice('products'),
-      fetchSlice('dishes'),
-      fetchSlice('dailyMeals'),
-      fetchSlice('targets'),
-      fetchSlice('macroTargets'),
-      fetchSlice('pinnedIds'),
-      fetchSlice('mealsDone'),
-      fetchSlice('mealPresets'),
-      fetchSlice('weightLog'),
-      fetchSlice('settings'),
-    ]).then(([
-      productsData,
-      dishesData,
-      dailyMealsData,
-      targetsData,
-      macroTargetsData,
-      pinnedIdsData,
-      mealsDoneData,
-      mealPresetsData,
-      weightLogData,
-      settingsData,
-    ]) => {
-      if (cancelled) return;
-      const safeProducts = productsData ?? DEFAULTS.products;
-      const safeDishes = dishesData ?? DEFAULTS.dishes;
-      const rawMeals = dailyMealsData ?? DEFAULTS.dailyMeals;
-      const rawPresets = mealPresetsData ?? DEFAULTS.mealPresets;
-      const safeTargets = targetsData ?? DEFAULTS.targets;
-      const safeMacroTargets = macroTargetsData ?? DEFAULTS.macroTargets;
-      const safePinnedIds = pinnedIdsData ?? DEFAULTS.pinnedIds;
-      const safeMealsDone = mealsDoneData ?? DEFAULTS.mealsDone;
-      const safeWeightLog = weightLogData ?? DEFAULTS.weightLog;
-      const safeSettings = settingsData ?? DEFAULTS.settings;
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
 
+  // Granular writes in flight. Refreshing mid-write could read the
+  // pre-write state back and undo the edit on screen.
+  const pendingWrites = useRef(0);
+  const syncingRef = useRef(false);
+  const bootstrapped = useRef(false);
+
+  const sync = useCallback(async (): Promise<boolean> => {
+    if (syncingRef.current || pendingWrites.current > 0) return false;
+    syncingRef.current = true;
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      const data = await fetchAllSlices();
+      if (!mounted.current) return false;
+
+      const safe = <K extends keyof UserData>(k: K): UserData[K] =>
+        (data[k] ?? DEFAULTS[k]) as UserData[K];
+
+      const nextProducts = safe('products');
+      const nextDishes = safe('dishes');
+      const rawMeals = safe('dailyMeals');
+      const rawPresets = safe('mealPresets');
+      const nextPinned = safe('pinnedIds');
+      const nextMealsDone = safe('mealsDone');
+      const nextWeightLog = safe('weightLog');
       const { meals: enrichedMeals, presets: enrichedPresets } = backfillSnapshots(
         rawMeals,
         rawPresets,
-        safeProducts,
-        safeDishes,
+        nextProducts,
+        nextDishes,
       );
 
-      // Seed baselines BEFORE setStates so the effects fired by the
-      // upcoming render compare the new value to the correct baseline.
-      // For dailyMeals/mealPresets we seed the RAW (pre-enrichment) value,
-      // so the enriched setState triggers exactly one save per affected
-      // slice (which persists the snapshots).
+      // Seed baselines BEFORE setState so the effects fired by the upcoming
+      // render compare against the value we just loaded (see the note in
+      // useDebouncedSliceSave).
       baselines.current = {
-        products: safeProducts,
-        dishes: safeDishes,
+        ...baselines.current,
+        products: nextProducts,
+        dishes: nextDishes,
         dailyMeals: rawMeals,
-        targets: safeTargets,
-        macroTargets: safeMacroTargets,
-        pinnedIds: safePinnedIds,
-        mealsDone: safeMealsDone,
+        pinnedIds: nextPinned,
+        mealsDone: nextMealsDone,
         mealPresets: rawPresets,
-        weightLog: safeWeightLog,
-        settings: safeSettings,
+        weightLog: nextWeightLog,
       };
-
-      setProducts(safeProducts);
-      setDishes(safeDishes);
+      setProducts(nextProducts);
+      setDishes(nextDishes);
       setDailyMeals(enrichedMeals);
-      setTargets(safeTargets);
-      setMacroTargets(safeMacroTargets);
-      setPinnedIds(safePinnedIds);
-      setMealsDone(safeMealsDone);
+      setPinnedIds(nextPinned);
+      setMealsDone(nextMealsDone);
       setMealPresets(enrichedPresets);
-      setWeightLog(safeWeightLog);
-      setSettings(safeSettings);
-      setLoading(false);
-    });
+      setWeightLog(nextWeightLog);
 
-    return () => {
-      cancelled = true;
-    };
+      // A blob slice the user has edited but which hasn't been persisted
+      // yet keeps its local value — the pending debounced save owns it.
+      const isDirty = (key: 'targets' | 'macroTargets' | 'settings'): boolean => {
+        const base = baselines.current[key] as unknown;
+        return base !== undefined && base !== (blobRef.current[key] as unknown);
+      };
+      if (!isDirty('targets')) {
+        const v = safe('targets');
+        baselines.current.targets = v;
+        setTargets(v);
+      }
+      if (!isDirty('macroTargets')) {
+        const v = safe('macroTargets');
+        baselines.current.macroTargets = v;
+        setMacroTargets(v);
+      }
+      if (!isDirty('settings')) {
+        const v = safe('settings');
+        baselines.current.settings = v;
+        setSettings(v);
+      }
+
+      setLastSyncedAt(Date.now());
+      setLoadError(null);
+      return true;
+    } catch (err) {
+      console.error('[meal-builder] sync failed:', err);
+      if (mounted.current) {
+        setSyncError('Не вдалося оновити дані');
+        if (!bootstrapped.current) setLoadError('Не вдалося завантажити дані');
+      }
+      return false;
+    } finally {
+      syncingRef.current = false;
+      bootstrapped.current = true;
+      if (mounted.current) {
+        setSyncing(false);
+        setLoading(false);
+      }
+    }
   }, []);
+
+  // Bootstrap. Deferred by a tick so the effect body itself doesn't set state.
+  useEffect(() => {
+    const t = setTimeout(() => void sync(), 0);
+    return () => clearTimeout(t);
+  }, [sync]);
+
+  // Re-read the server when the tab comes back into view. Phones keep the
+  // page alive for days: without this the in-memory copy stays at whatever
+  // it was when the tab was last used, and the next edit writes that stale
+  // day back over changes made on another device.
+  useEffect(() => {
+    let lastAttempt = 0;
+    const maybeSync = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastAttempt < MIN_AUTO_SYNC_GAP_MS) return;
+      lastAttempt = now;
+      void sync();
+    };
+    const onPageShow = (e: PageTransitionEvent) => {
+      // bfcache restore: the page is resurrected untouched, always re-read.
+      if (e.persisted) lastAttempt = 0;
+      maybeSync();
+    };
+    window.addEventListener('focus', maybeSync);
+    window.addEventListener('online', maybeSync);
+    window.addEventListener('pageshow', onPageShow);
+    document.addEventListener('visibilitychange', maybeSync);
+    return () => {
+      window.removeEventListener('focus', maybeSync);
+      window.removeEventListener('online', maybeSync);
+      window.removeEventListener('pageshow', onPageShow);
+      document.removeEventListener('visibilitychange', maybeSync);
+    };
+  }, [sync]);
 
   const ready = !loading;
   // Only the two singular *Targets slices are still saved as a blob —
@@ -709,6 +804,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     window.location.href = '/login';
   };
 
+  // Wrap every mutator so a background refresh can tell that a write is
+  // still in flight (see `sync`).
+  const tracked = <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
+      pendingWrites.current++;
+      try {
+        return await fn(...args);
+      } finally {
+        pendingWrites.current--;
+      }
+    };
+
   return (
     <DataContext.Provider
       value={{
@@ -725,23 +832,28 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         weightLog,
         settings,
         setSettings,
-        addProduct,
-        updateProduct,
-        removeProduct,
-        pinProduct,
-        unpinProduct,
-        addDish,
-        updateDish,
-        removeDish,
-        setMealsForDate,
-        deleteMealsForDate,
-        addMealPreset,
-        removeMealPreset,
-        setMealsDoneForDate: setMealsDoneForDateHandler,
-        setWeightForDate: setWeightForDateHandler,
-        deleteWeightForDate: deleteWeightForDateHandler,
+        addProduct: tracked(addProduct),
+        updateProduct: tracked(updateProduct),
+        removeProduct: tracked(removeProduct),
+        pinProduct: tracked(pinProduct),
+        unpinProduct: tracked(unpinProduct),
+        addDish: tracked(addDish),
+        updateDish: tracked(updateDish),
+        removeDish: tracked(removeDish),
+        setMealsForDate: tracked(setMealsForDate),
+        deleteMealsForDate: tracked(deleteMealsForDate),
+        addMealPreset: tracked(addMealPreset),
+        removeMealPreset: tracked(removeMealPreset),
+        setMealsDoneForDate: tracked(setMealsDoneForDateHandler),
+        setWeightForDate: tracked(setWeightForDateHandler),
+        deleteWeightForDate: tracked(deleteWeightForDateHandler),
         loading,
         logout,
+        refresh: sync,
+        syncing,
+        lastSyncedAt,
+        syncError,
+        loadError,
       }}
     >
       {children}

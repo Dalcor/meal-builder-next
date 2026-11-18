@@ -5,9 +5,10 @@ import { verifyToken } from '@/lib/auth';
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow auth API routes and login page
+  // Allow auth API routes, login page and cron (cron checks CRON_SECRET itself)
   if (
     pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/cron') ||
     pathname.startsWith('/login') ||
     pathname.startsWith('/_next') ||
     pathname === '/favicon.ico'

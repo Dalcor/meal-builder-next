@@ -529,3 +529,14 @@ async function seedProductCatalog(userId: string): Promise<void> {
 export function verifyPassword(user: DbUser, password: string): boolean {
   return bcrypt.compareSync(password, user.passwordHash);
 }
+
+// ---------------------------------------------------------------------------
+// Keep-alive. Upstash archives free-tier databases after ~14 days without
+// traffic (the host then stops resolving and every request fails). A daily
+// Vercel cron hits /api/cron/keepalive, which calls this. A write (not just
+// PING) so it unambiguously counts as activity. Costs 1 command/day.
+export async function keepAlive(): Promise<string> {
+  const now = new Date().toISOString();
+  await kv().set('mb:keepalive', now);
+  return now;
+}

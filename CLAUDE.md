@@ -63,6 +63,7 @@ meal-builder-next/
 │   │       ├── product-image/fetch/route.ts  # POST { url } → SSRF-guarded proxy для кропу в браузері
 │   │       ├── product-image/silpo/route.ts  # GET ?q= → пошук товарів на silpo.ua (title + URL картинок)
 │   │       ├── nutrition-search/route.ts     # GET ?source=silpo|tablycja&q= → КБЖВ на 100 г із зовнішніх каталогів
+│   │       ├── cron/keepalive/route.ts # GET (Vercel Cron, Bearer CRON_SECRET) → щоденний SET у Redis проти архівації Upstash
 │   │       ├── products/route.ts       # GET, PUT
 │   │       ├── dishes/route.ts         # GET, PUT
 │   │       ├── meals/route.ts          # GET, PUT (всі дні)
@@ -186,6 +187,7 @@ Demo-користувач створюється автоматично в KV п
 - `JWT_SECRET` — обов'язково в production, інакше використовується небезпечний fallback.
 - `BLOB_READ_WRITE_TOKEN` — Vercel Blob для фото продуктів (інжектиться при прив'язці store до проєкту).
 - `NODE_ENV=production` — щоб cookie стало `secure`.
+- `CRON_SECRET` — для `/api/cron/keepalive` (`vercel.json`, щодня 06:00 UTC). Upstash архівує безкоштовну базу після ~14 днів без трафіку: хост перестає резолвитись (NXDOMAIN), і всі запити падають. Без `CRON_SECRET` роут віддає 401 і база знову засне.
 
 
 ## Скрипти
